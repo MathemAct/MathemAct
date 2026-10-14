@@ -1,0 +1,20 @@
+---
+/**
+ * /debates/<id>/ moved to /opinions/<id>/ on 2026-10-12, when the section was renamed
+ * Opinions. One redirect stub per claim in the export, so that every claim address handed
+ * out before the rename — by the activity feed, by citations, by people — still resolves.
+ * The fragment and query (`#comment-<id>`, `?position=`) are carried by Redirect.astro.
+ */
+import Redirect from '../../components/Redirect.astro';
+import { listClaims } from '../../lib/claims';
+import { path } from '../../lib/paths';
+
+export async function getStaticPaths() {
+  const claims = await listClaims();
+  return claims.map((claim) => ({ params: { id: claim.id } }));
+}
+
+const { id } = Astro.params;
+---
+
+<Redirect to={path(`/opinions/${id}/`)} />

@@ -1,0 +1,195 @@
+/* Design tokens — the single source of truth.
+ *
+ * Every colour, size, space, and duration in this project comes from here. A raw hex or
+ * a raw pixel value anywhere else is a bug: it is how a palette of seven colours quietly
+ * becomes twenty, and this audience notices.
+ *
+ * The palette is deliberately small. Four neutrals plus one accent carry the entire
+ * interface; the three outcome colours are reserved and appear nowhere but outcomes.
+ * Adding a token is a design decision, not a convenience — check whether an existing one
+ * will do first.
+ *
+ * One palette, one page's worth of history: the landing page was redesigned on
+ * 2026-08-17 to warm paper, near-black ink, and a single brick red, and the reading pages
+ * followed the next commit. The chalk-blue accent that used to live here is gone. The
+ * `--home-*` names survive as aliases; see the block below.
+ *
+ * No dark mode yet. When it arrives it redefines the values in this file and nothing
+ * else, which is the point of routing everything through here.
+ */
+
+:root {
+  /* ══ Colour ═══════════════════════════════════════════════════════════════════════
+   * Contrast ratios below are measured against --ground. WCAG AA needs 4.5:1 for body
+   * text and 3:1 for graphics and large text.
+   */
+
+  --ground: #f8f5ee; /* warm paper — page background */
+  --ink: #1a1a1a; /* body text                   16.0:1 */
+  --rule: #ddd6c7; /* borders and dividers         1.3:1, graphics only */
+  --accent: #b1231a; /* brick red — links, focus      6.2:1 */
+
+  /* Derived neutrals. Kept few and named for role, not appearance. */
+  --ink-muted: #4a4844; /* secondary text, metadata      8.4:1 */
+  --surface: #fffdf7; /* raised cards against ground */
+  --accent-strong: #8c1a12; /* link hover and active         8.5:1 */
+  --accent-wash: color-mix(in srgb, var(--accent) 8%, var(--ground));
+
+  /* The one tint. Full-bleed bands only — a section the width of the viewport, never a
+   * card, because a warm rectangle floating on warm paper reads as a slot something was
+   * dropped into rather than as part of the page. */
+  --panel: #fbf4e5;
+
+  /* ── The landing aliases ───────────────────────────────────────────────────────────
+   * The home page had its own palette for one day, until it became the site's. These
+   * names stay because the landing page and the footer read better with role names of
+   * their own — "paper" and "ink" rather than "ground" and "ink" — but every one of them
+   * now resolves to the token above it. There is one palette. If these ever diverge
+   * again, that is a decision to write down, not a value to edit here.
+   */
+  --home-paper: var(--ground);
+  --home-panel: var(--panel);
+  --home-ink: var(--ink);
+  --home-ink-soft: var(--ink-muted);
+  --home-rule: var(--rule);
+  --home-red: var(--accent);
+  --home-red-strong: var(--accent-strong);
+
+  --home-radius: var(--radius-md);
+
+  /* ── Outcome semantics ────────────────────────────────────────────────────────────
+   * worked / partially worked / did not work. These three appear NOWHERE else — the
+   * moment they are borrowed for a button or a link, they stop meaning anything.
+   *
+   * They are applied to the tombstone glyph, never to the label. There is one reason and
+   * it is not the contrast:
+   *
+   *  Colour must never be the sole carrier of meaning. The label states the outcome in
+   *  words regardless; leaving it in ink keeps that the primary signal and the colour a
+   *  secondary cue, which is the correct ordering.
+   *
+   * This block used to give a second reason — that --outcome-partial is 4.41:1 and so
+   * falls short of the 4.5:1 floor for body text. That number was wrong. #8a6a1f on
+   * #f8f5ee is 4.63:1, which the inline comment below has said all along, and it passes
+   * AA at every text size. Corrected 2026-08-21; the behaviour does not change, because
+   * the reason above was always the load-bearing one. Do not reinstate the contrast
+   * argument: it invites somebody to "fix" the colour to clear a floor it already clears,
+   * and it teaches that the rule is about legibility when the rule is about meaning.
+   *
+   * ── The accent is now red, and --outcome-failed is a red too ──────────────────────
+   * This is the one uncomfortable consequence of the 2026-08-17 palette change, and it
+   * is recorded rather than fixed. #8a3a34 is a muted brick and #b1231a is a brighter,
+   * more saturated red; side by side they are distinguishable, but they are the same
+   * family, and rule 2 above is what keeps the page readable: a failed outcome is an
+   * open square *plus* the words "did not work", and a link is underlined text. Neither
+   * is ever carried by hue alone.
+   *
+   * What must not happen is the drift in the other direction — using --accent for
+   * anything outcome-shaped, or reaching for --outcome-failed because a warning needs to
+   * look red. Those three values mean one thing each. If the proximity turns out to
+   * mislead readers once there are published reports to look at, the fix is to move
+   * --outcome-failed, not to move the accent back.
+   */
+  --outcome-worked: #2e6b4f; /*  5.8:1 */
+  --outcome-partial: #8a6a1f; /*  4.63:1 — glyph only, see above */
+  --outcome-failed: #8a3a34; /*  7.0:1 */
+
+  /* ══ Type ═════════════════════════════════════════════════════════════════════════
+   * The Serif / Sans / Mono split does real work: monospace marks anything a machine
+   * could parse — model names, versions, dates, scores, tags. Never use Mono for
+   * decoration; it is a claim about the content.
+   */
+
+  --font-serif: 'IBM Plex Serif', Cambria, Georgia, 'Times New Roman', serif;
+  --font-sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', Helvetica, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', 'Cascadia Mono', Consolas, monospace;
+
+  /* Not part of the split above and not for prose. Kalam sets the annotations on the
+   * home page diagram only; see the note in public/fonts/fonts.css. */
+  --font-hand: 'Kalam', 'Segoe Script', 'Bradley Hand', cursive;
+
+  /* Numeric scale, roughly 1.2–1.25 between steps. Body sits at 17px: this is long-form
+   * reading, and 16px is a browser default rather than a decision. */
+  --size-0: 0.75rem; /* 12px — mono badges */
+  --size-1: 0.8125rem; /* 13px — mono metadata */
+  --size-2: 0.9375rem; /* 15px — small print, captions */
+  --size-3: 1.0625rem; /* 17px — body */
+  --size-4: 1.25rem; /* 20px — lead paragraph */
+  --size-5: 1.5rem; /* 24px — h3 */
+  --size-6: 1.875rem; /* 30px — h2 */
+  --size-7: 2.375rem; /* 38px — h1 */
+  --size-8: clamp(2.5rem, 1.9rem + 2.6vw, 3.25rem); /* display */
+
+  --leading-tight: 1.15; /* display */
+  --leading-snug: 1.25; /* headings */
+  --leading-normal: 1.6; /* body */
+  --leading-relaxed: 1.7; /* long prose */
+
+  --tracking-tight: -0.011em; /* large serif, which sets loose by default */
+  --tracking-normal: 0;
+  --tracking-wide: 0.06em; /* mono labels in small caps */
+
+  --weight-normal: 400;
+  --weight-semibold: 600;
+
+  /* Longest comfortable line. Applied to prose containers, never to the page shell. */
+  --measure: 68ch;
+  --measure-narrow: 34rem;
+
+  /* ══ Space ════════════════════════════════════════════════════════════════════════
+   * 4px base. Named by t-shirt size so the scale can be re-tuned without renaming.
+   */
+  --space-3xs: 0.25rem; /*  4px */
+  --space-2xs: 0.5rem; /*  8px */
+  --space-xs: 0.75rem; /* 12px */
+  --space-sm: 1rem; /* 16px */
+  --space-md: 1.5rem; /* 24px */
+  --space-lg: 2rem; /* 32px */
+  --space-xl: 3rem; /* 48px */
+  --space-2xl: 4rem; /* 64px */
+  --space-3xl: 6rem; /* 96px */
+
+  /* ══ Layout ═══════════════════════════════════════════════════════════════════════ */
+  --width-prose: 46rem; /* single reading column */
+  --width-shell: 72rem; /* header, footer, wide listings */
+  --gutter: clamp(1rem, 4vw, 2.5rem);
+
+  /* ══ Line and edge ════════════════════════════════════════════════════════════════
+   * Radii are near zero on purpose. The signature element is a filled square; rounded
+   * corners would argue with it on every page.
+   */
+  --radius-none: 0;
+  --radius-sm: 2px;
+  --radius-md: 3px;
+
+  --border-width: 1px;
+  --border-width-thick: 2px;
+  --border: var(--border-width) solid var(--rule);
+  --border-strong: var(--border-width-thick) solid var(--ink);
+
+  /* ══ Focus ════════════════════════════════════════════════════════════════════════
+   * Ink rather than the accent, which is what it used to be. The accent is now red and
+   * so is the primary button, and a red ring around a red button is not a focus
+   * indicator — it is a slightly thicker button. Ink is 16:1 on the ground and reads
+   * against every surface on the site, including inside the button. The offset keeps
+   * the ring off the glyph edges so it reads as a ring, not a border.
+   */
+  --focus-width: 2px;
+  --focus-offset: 2px;
+  --focus-ring: var(--focus-width) solid var(--ink);
+
+  /* ══ Motion ═══════════════════════════════════════════════════════════════════════
+   * Short and few. Every duration here is overridden to near-zero under
+   * prefers-reduced-motion in base.css.
+   */
+  --motion-fast: 120ms;
+  --motion-base: 200ms;
+  --motion-ease: cubic-bezier(0.2, 0, 0.2, 1);
+
+  /* ══ The tombstone ════════════════════════════════════════════════════════════════
+   * Sized in em so it tracks whatever text it sits beside, and nudged up by its own
+   * optical offset so it centres on the x-height rather than the baseline.
+   */
+  --tombstone-size: 0.62em;
+  --tombstone-rise: 0.02em;
+}

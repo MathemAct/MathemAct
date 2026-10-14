@@ -1,0 +1,247 @@
+---
+/**
+ * Asking for the account to be erased.
+ *
+ * The page is mostly words, and that is the point. Erasure here does two different things
+ * to two different kinds of data, and somebody who expects the second to behave like the
+ * first will feel misled however carefully the code behaves. So it is spelled out before
+ * the button, not after it: the account goes, and what was published stays, detached and
+ * unattributed, under the licence it was published under.
+ *
+ * The request is a row rather than an email so that it is provably from the account it
+ * names — see the migration that creates the table. Acting on it is manual and belongs to
+ * the moderation tooling; nothing on this page deletes anything.
+ */
+import Account from '../../layouts/Account.astro';
+import Field from '../../components/Field.astro';
+import FormStatus from '../../components/FormStatus.astro';
+import { path } from '../../lib/paths';
+import { LICENCE, SITE } from '../../lib/site';
+import { LIMITS } from '../../lib/validation';
+---
+
+<Account
+  title="Erase this account"
+  description="What happens when an account is erased, and how to ask for it."
+  lead="Account erasure genuinely removes your account. What you published stays, without your name on it. Both halves are explained below."
+  gate="required"
+>
+  <div class="prose">
+    <h2>What is removed</h2>
+
+    <ul class="tombstone-list">
+      <li>Your account, and with it the email address it was created with.</li>
+      <li>Your profile: display name, bio, and the institutional record derived from your address.</li>
+      <li>Your ratings, and any confirmations you added to a report.</li>
+      <li>Any standing erasure request, including this one.</li>
+    </ul>
+
+    <h2>What stays</h2>
+
+    <p>
+      Reports and comments you posted are <strong>detached rather than deleted</strong>.
+      The author attribution is stripped, so nothing points back to you, and the text
+      remains where it is.
+    </p>
+
+    <p>
+      Two reasons, and neither is convenience. Removing a comment from the middle of a
+      thread makes the replies around it incomprehensible, so an account leaving would take
+      other people's work down with it. And everything posted here is published under
+      <a href={LICENCE.url} rel="license">{LICENCE.name}</a>, which is an irrevocable
+      licence — copies already downloaded from a nightly export cannot be recalled, and
+      pretending otherwise would be the dishonest option.
+    </p>
+
+    <p>
+      If you want particular posts deleted outright rather than detached, say which in the
+      note below and they will be. That is a separate decision from erasing the account,
+      and you can ask for either or both.
+    </p>
+
+    <h2>How it is done</h2>
+
+    <p>
+      A request is recorded against your account and worked by hand. Moderation here is
+      volunteer-run, so expect days rather than minutes. You can withdraw the request at any
+      time until it is acted on, and doing so removes it completely.
+    </p>
+
+    <p>
+      You will not be asked why, and you do not have to say. Questions about any of this go
+      to <a href={`mailto:${SITE.contactEmail}`}>{SITE.contactEmail}</a>, and the
+      <a href={path('/privacy/')}>privacy notice</a> sets out the rest of your rights.
+    </p>
+  </div>
+
+  <div class="panel" data-standing hidden>
+    <p class="panel__heading">Request on file</p>
+    <p>
+      An erasure request was filed on <span class="meta" data-requested-at></span>. It is
+      waiting to be worked. Nothing has been removed yet.
+    </p>
+    <div class="actions">
+      <button class="button" type="button" data-withdraw>Withdraw the request</button>
+    </div>
+  </div>
+
+  <form class="form" id="delete" hidden novalidate>
+    <FormStatus id="delete-status" />
+
+    <Field
+      id="note"
+      label="Anything the person handling it should know"
+      type="textarea"
+      maxlength={LIMITS.note.max}
+      rows={4}
+      hint="Optional. Name specific posts here if you want them deleted outright rather than detached."
+    />
+
+    <div class="checkbox">
+      <input class="checkbox__input" type="checkbox" id="understood" name="understood" />
+      <label class="checkbox__label" for="understood">
+        I understand that my account is removed and that what I published stays, without my
+        name on it
+      </label>
+    </div>
+
+    <div class="actions">
+      <button class="button button--primary" type="submit">Request erasure</button>
+      <a href={path('/account/')}>Back to your profile</a>
+    </div>
+  </form>
+
+  {/* The standing-request panel has its own status region, because it is shown when the
+      form is not, and the form's own region is hidden along with the form. An HTML comment
+      here would ship to the browser; Astro emits those. */}
+  <FormStatus id="standing-status" />
+</Account>
+
+<script>
+  import { longDate } from '../../lib/format';
+  import {
+    loadDeletionRequest,
+    requestDeletion,
+    withdrawDeletion,
+  } from '../../lib/profile';
+  import { startSession, subscribeToSession } from '../../lib/session';
+  import {
+    clearFieldErrors,
+    hideStatus,
+    query,
+    setBusy,
+    showStatus,
+    validateFields,
+  } from '../../lib/forms';
+  import { validateNote } from '../../lib/validation';
+
+  const form = query<HTMLFormElement>('#delete');
+  const status = query<HTMLElement>('#delete-status');
+  const standingStatus = query<HTMLElement>('#standing-status');
+  const submit = query<HTMLButtonElement>('button[type="submit"]', form);
+  const note = query<HTMLTextAreaElement>('#note', form);
+  const understood = query<HTMLInputElement>('#understood', form);
+
+  const standing = query<HTMLElement>('[data-standing]');
+  const requestedAt = query<HTMLElement>('[data-requested-at]');
+  const withdraw = query<HTMLButtonElement>('[data-withdraw]');
+
+  let userId: string | null = null;
+
+  subscribeToSession((state) => {
+    if (state.status !== 'signed-in') return;
+    if (userId === state.userId) return;
+
+    userId = state.userId;
+    void refresh(state.userId);
+  });
+
+  void startSession();
+
+  /** Exactly one of the form and the standing-request panel is ever visible. */
+  async function refresh(id: string): Promise<void> {
+    const result = await loadDeletionRequest(id);
+
+    if (!result.ok) {
+      form.hidden = false;
+      showStatus(status, 'error', result.message);
+      return;
+    }
+
+    const existing = result.value;
+
+    if (existing) {
+      requestedAt.textContent = longDate(existing.requestedAt);
+      standing.hidden = false;
+      form.hidden = true;
+      return;
+    }
+
+    standing.hidden = true;
+    form.hidden = false;
+  }
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    clearFieldErrors(form);
+    hideStatus(status);
+    hideStatus(standingStatus);
+
+    if (!userId) {
+      showStatus(status, 'error', 'This session has ended. Sign in again to file a request.');
+      return;
+    }
+
+    if (!validateFields([{ id: 'note', error: validateNote(note.value) }], form)) return;
+
+    // The confirmation is a checkbox rather than a typed phrase or a second dialog. This
+    // is reversible until someone acts on it, and a ritual proportionate to an
+    // irreversible action would be theatre — the kind that teaches people to click through
+    // the next one without reading.
+    if (!understood.checked) {
+      showStatus(
+        status,
+        'error',
+        'Tick the box to confirm you have read what happens to your account and to what you published.',
+      );
+      understood.focus();
+      return;
+    }
+
+    setBusy(submit, true, 'Filing the request…');
+    const result = await requestDeletion(userId, note.value);
+    setBusy(submit, false);
+
+    if (!result.ok) {
+      showStatus(status, 'error', result.message);
+      return;
+    }
+
+    await refresh(userId);
+    showStatus(standingStatus, 'success', [
+      'The request is on file. Nothing has been removed yet.',
+      'You will hear back when it has been worked. Until then you can withdraw it above.',
+    ]);
+  });
+
+  withdraw.addEventListener('click', async () => {
+    if (!userId) return;
+
+    hideStatus(standingStatus);
+    setBusy(withdraw, true, 'Withdrawing…');
+    const result = await withdrawDeletion(userId);
+    setBusy(withdraw, false);
+
+    if (!result.ok) {
+      showStatus(standingStatus, 'error', result.message);
+      return;
+    }
+
+    await refresh(userId);
+    showStatus(
+      standingStatus,
+      'notice',
+      'The request has been withdrawn and removed. Your account is untouched.',
+    );
+  });
+</script>

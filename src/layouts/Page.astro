@@ -1,0 +1,72 @@
+---
+/**
+ * Layout for long-form prose pages: about, privacy, code of conduct, and the governance
+ * documents that follow. Sets one reading column and a consistent page header, so those
+ * pages differ only in their words.
+ */
+import Base from './Base.astro';
+
+interface Props {
+  title: string;
+  description?: string;
+  /** One sentence under the title, in larger type. */
+  lead?: string;
+  /** Human-readable date. Shown in mono, because a date is machine-parseable. */
+  updated?: string;
+}
+
+const { title, description, lead, updated } = Astro.props;
+---
+
+<Base title={title} description={description}>
+  <div class="shell page">
+    <header class="page__header">
+      <h1>{title}</h1>
+      {lead && <p class="page__lead">{lead}</p>}
+      {
+        updated && (
+          <p class="page__updated">
+            <span class="mono">Last updated {updated}</span>
+          </p>
+        )
+      }
+    </header>
+
+    <div class="prose">
+      <slot />
+    </div>
+  </div>
+</Base>
+
+<style>
+  .page {
+    padding-block: var(--space-2xl) var(--space-xl);
+  }
+
+  .page__header {
+    max-width: var(--width-prose);
+    margin-block-end: var(--space-xl);
+    padding-block-end: var(--space-md);
+    border-block-end: var(--border);
+  }
+
+  .page__lead {
+    max-width: var(--measure);
+    margin-block-start: var(--space-sm);
+    font-size: var(--size-4);
+    line-height: var(--leading-relaxed);
+    color: var(--ink-muted);
+    text-wrap: pretty;
+  }
+
+  .page__updated {
+    margin-block-start: var(--space-sm);
+  }
+
+  .mono {
+    color: var(--ink-muted);
+    font-family: var(--font-mono);
+    font-size: var(--size-1);
+    letter-spacing: var(--tracking-wide);
+  }
+</style>

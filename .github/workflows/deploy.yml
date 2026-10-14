@@ -1,0 +1,77 @@
+# Build the static site and publish it to GitHub Pages.
+#
+# Reads are served entirely from these built files (CLAUDE.md, "Read/write split"), so
+# this workflow is the whole read path in production. Actions are pinned to commit SHAs,
+# not tags: a tag can be moved to point at different code, a SHA cannot.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  # Lets a deploy be re-run without an empty commit, e.g. after the nightly export job
+  # commits fresh JSON into data/.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time. Not cancel-in-progress: a half-finished Pages deployment that
+# gets cancelled can leave the live site in a worse state than an old-but-complete one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Reads `base` out of astro.config.mjs and exports it, so the built HTML and the
+      # Pages deployment agree on the path prefix.
+      - name: Configure Pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      - name: Build
+        run: npm run build
+        env:
+          # No third-party phone-home from the build, for the same reason the site has no
+          # analytics. Astro's telemetry is anonymous but it is still an outbound call we
+          # did not ask for.
+          ASTRO_TELEMETRY_DISABLED: '1'
+
+          # Public by design — see .env.example. Stored as repository *variables*, not
+          # secrets, because they ship to the browser in the built output and pretending
+          # otherwise would only hide them from us. An unset variable is an empty string;
+          # nothing in the build depends on them yet.
+          PUBLIC_SUPABASE_URL: ${{ vars.PUBLIC_SUPABASE_URL }}
+          PUBLIC_SUPABASE_ANON_KEY: ${{ vars.PUBLIC_SUPABASE_ANON_KEY }}
+          PUBLIC_TURNSTILE_SITE_KEY: ${{ vars.PUBLIC_TURNSTILE_SITE_KEY }}
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0

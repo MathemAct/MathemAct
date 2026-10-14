@@ -1,0 +1,176 @@
+---
+/**
+ * Creating an account.
+ *
+ * The two pieces of copy that carry the most weight are next to the email field and next
+ * to the pseudonym checkbox, and both exist because of the same thing: this audience has
+ * professional reasons to be careful about what they attach their name to. Someone reading
+ * "we use your email domain" without an explanation will reasonably assume we intend to
+ * publish it, and leave.
+ */
+import Account from '../../layouts/Account.astro';
+import Field from '../../components/Field.astro';
+import FormStatus from '../../components/FormStatus.astro';
+import Turnstile from '../../components/Turnstile.astro';
+import { path } from '../../lib/paths';
+import { LIMITS } from '../../lib/validation';
+---
+
+<Account
+  title="Create an account"
+  description="Sign up to post accounts of how you have used AI tools in mathematical work."
+  lead="An account lets you post reports, confirm whether one still reproduces, and answer claims. Reading needs no account at all."
+  gate="anonymous"
+>
+  <form class="form" id="sign-up" novalidate>
+    <FormStatus id="sign-up-status" />
+
+    <Field
+      id="email"
+      label="Email address"
+      type="email"
+      required
+      autocomplete="email"
+      maxlength={254}
+    >
+      <Fragment slot="hint">
+        <p>
+          The domain is used once, server-side, to work out whether your address belongs to
+          a research institution and to award an institutional badge if it does. You cannot
+          set that yourself and neither can we.
+        </p>
+        <p>
+          <strong>The address itself is never displayed</strong> — not on your profile, not
+          in the API, not in the public export, and not to moderators. A personal address
+          is completely fine; it simply means no institutional badge.
+        </p>
+      </Fragment>
+    </Field>
+
+    <Field
+      id="password"
+      label="Password"
+      type="password"
+      required
+      autocomplete="new-password"
+      hint={`At least ${LIMITS.password.min} characters. A few unrelated words is easier to remember and harder to guess than a short password.`}
+    />
+
+    <Field
+      id="display-name"
+      label="Display name"
+      required
+      autocomplete="nickname"
+      maxlength={LIMITS.displayName.max}
+      hint="What appears on everything you post. It can be changed later."
+    />
+
+    <div class="checkbox">
+      <input class="checkbox__input" type="checkbox" id="is-pseudonym" name="is-pseudonym" />
+      <label class="checkbox__label" for="is-pseudonym">
+        Show this as a pseudonym rather than my name
+      </label>
+    </div>
+
+    <Turnstile id="sign-up-turnstile" />
+
+    <p class="field__hint">
+      By creating an account you agree to follow the <a href={path('/code-of-conduct/')}
+        >code of conduct</a
+      >. What is stored and how to have it erased is set out in the <a
+        href={path('/privacy/')}>privacy notice</a
+      >.
+    </p>
+
+    <div class="actions">
+      <button class="button button--primary" type="submit">Create account</button>
+      <a href={path('/account/sign-in/')}>I already have an account</a>
+    </div>
+  </form>
+</Account>
+
+<script>
+  import { signUp } from '../../lib/auth';
+  import { mountTurnstile } from '../../lib/turnstile';
+  import { path } from '../../lib/paths';
+  import {
+    clearFieldErrors,
+    hideStatus,
+    query,
+    setBusy,
+    showStatus,
+    validateFields,
+  } from '../../lib/forms';
+  import {
+    validateDisplayName,
+    validateEmail,
+    validatePassword,
+  } from '../../lib/validation';
+
+  const form = query<HTMLFormElement>('#sign-up');
+  const status = query<HTMLElement>('#sign-up-status');
+  const submit = query<HTMLButtonElement>('button[type="submit"]', form);
+
+  const email = query<HTMLInputElement>('#email', form);
+  const password = query<HTMLInputElement>('#password', form);
+  const displayName = query<HTMLInputElement>('#display-name', form);
+  const isPseudonym = query<HTMLInputElement>('#is-pseudonym', form);
+
+  // Mounting starts now and is awaited at submission time. Not a top-level await: the
+  // widget takes a network round trip to appear, and blocking the module on it would mean
+  // the form's own submit handler is not attached until Cloudflare answers.
+  const turnstile = mountTurnstile(query<HTMLElement>('#sign-up-turnstile', form));
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    clearFieldErrors(form);
+    hideStatus(status);
+
+    const valid = validateFields(
+      [
+        { id: 'email', error: validateEmail(email.value) },
+        { id: 'password', error: validatePassword(password.value) },
+        { id: 'display-name', error: validateDisplayName(displayName.value) },
+      ],
+      form,
+    );
+
+    if (!valid) return;
+
+    setBusy(submit, true, 'Creating account…');
+
+    const widget = await turnstile;
+
+    const result = await signUp({
+      email: email.value,
+      password: password.value,
+      displayName: displayName.value,
+      isPseudonym: isPseudonym.checked,
+      captchaToken: await widget.token(),
+    });
+
+    setBusy(submit, false);
+
+    if (!result.ok) {
+      // A Turnstile token is single-use. Without this reset the second attempt fails the
+      // check rather than the thing that actually went wrong, and the message would send
+      // someone looking in the wrong place entirely.
+      widget.reset();
+      showStatus(status, 'error', result.message);
+      return;
+    }
+
+    // The address is carried forward in this browser's own sessionStorage so the next page
+    // can name it — "check bonn.de" is a great deal more useful than "check your email".
+    // sessionStorage rather than a query parameter: an address in a URL ends up in browser
+    // history, in a shared screenshot, and in anything that logs a referrer.
+    try {
+      window.sessionStorage.setItem('mathemact:pending-email', email.value.trim());
+    } catch {
+      // Storage refused. The next page falls back to asking for the address if it needs
+      // to resend, which is a smaller loss than failing the signup that just succeeded.
+    }
+
+    window.location.assign(path('/account/confirm/'));
+  });
+</script>

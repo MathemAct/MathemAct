@@ -1,0 +1,215 @@
+---
+/**
+ * Where someone waits for the confirmation email.
+ *
+ * This page exists because the gap between "account created" and "account usable" is the
+ * point at which most signups are abandoned, and almost every reason is addressable with
+ * words: the message is in spam, the sender is unfamiliar and looks like phishing, the
+ * link was opened on a phone rather than the laptop that signed up, or it simply has not
+ * arrived yet and nobody said how long to wait.
+ *
+ * The resend is rate-limited in the browser as well as at Supabase. The server limit is
+ * the one that matters; the client one exists so that pressing the button four times in
+ * frustration produces a countdown rather than a rate-limit error, which reads like a
+ * punishment for a reasonable thing to do.
+ */
+import Account from '../../layouts/Account.astro';
+import Field from '../../components/Field.astro';
+import FormStatus from '../../components/FormStatus.astro';
+import Turnstile from '../../components/Turnstile.astro';
+import { path } from '../../lib/paths';
+import { SITE } from '../../lib/site';
+---
+
+<Account
+  title="Confirm your email address"
+  description="What to do with the confirmation link, and how to get another one."
+  lead="A link is on its way. Opening it confirms the address and finishes the account."
+  gate="none"
+>
+  <div class="panel">
+    <p class="panel__heading">Sent to</p>
+    <p class="meta" data-pending-email>the address you signed up with</p>
+  </div>
+
+  <div class="prose">
+    <h2>What to expect</h2>
+
+    <ul class="tombstone-list">
+      <li>
+        The message comes from <span class="meta">{SITE.senderEmail}</span>, under the name
+        <strong>{SITE.senderName}</strong>. If that address is unfamiliar, that is why it is
+        printed here rather than left to be guessed at.
+      </li>
+      <li>
+        <strong>Check the spam folder.</strong> Confirmation mail from a small project on a
+        new sending domain lands there more often than not, and marking it as not spam helps
+        the next message through.
+      </li>
+      <li>
+        The link is valid for 24 hours. Opening it on a different device from the one you
+        signed up on is fine — a phone, if that is where your mail is.
+      </li>
+      <li>
+        Nothing is posted, published, or visible to anyone until you confirm. An
+        unconfirmed account has no profile page and no institutional badge, because the
+        badge is derived from a <em>confirmed</em> address.
+      </li>
+    </ul>
+
+    <h2>Nothing has arrived</h2>
+
+    <p>
+      Wait a couple of minutes first — mail is queued, and asking for a second link while
+      the first is still in flight only starts a rate limit. Then send another below. Any
+      earlier link stays valid, so it does not matter which one you open.
+    </p>
+  </div>
+
+  <form class="form" id="resend" novalidate>
+    <FormStatus id="resend-status" />
+
+    <Field
+      id="email"
+      label="Email address"
+      type="email"
+      required
+      autocomplete="email"
+      maxlength={254}
+      hint="Prefilled if you signed up in this browser. Otherwise, the address you used."
+    />
+
+    <Turnstile id="resend-turnstile" />
+
+    <div class="actions">
+      <button class="button button--primary" type="submit">Send another link</button>
+      <a href={path('/account/sign-in/')}>Already confirmed — sign in</a>
+    </div>
+  </form>
+</Account>
+
+<script>
+  import { resendConfirmation } from '../../lib/auth';
+  import { mountTurnstile } from '../../lib/turnstile';
+  import {
+    clearFieldErrors,
+    hideStatus,
+    query,
+    setBusy,
+    showStatus,
+    validateFields,
+  } from '../../lib/forms';
+  import { validateEmail } from '../../lib/validation';
+
+  /** Seconds between resends. Matches Supabase Auth's own default interval per address. */
+  const COOLDOWN = 60;
+  const PENDING_EMAIL = 'mathemact:pending-email';
+  const LAST_SENT = 'mathemact:last-confirmation-sent';
+
+  const form = query<HTMLFormElement>('#resend');
+  const status = query<HTMLElement>('#resend-status');
+  const submit = query<HTMLButtonElement>('button[type="submit"]', form);
+  const email = query<HTMLInputElement>('#email', form);
+  const sentTo = query<HTMLElement>('[data-pending-email]');
+
+  const turnstile = mountTurnstile(query<HTMLElement>('#resend-turnstile', form));
+
+  // Storage throws outright under some cookie policies, so every read and write here is
+  // guarded. Losing it costs a prefilled field, not the flow.
+  function remembered(key: string): string {
+    try {
+      return window.sessionStorage.getItem(key) ?? '';
+    } catch {
+      return '';
+    }
+  }
+
+  function remember(key: string, value: string): void {
+    try {
+      window.sessionStorage.setItem(key, value);
+    } catch {
+      /* Nothing to do, and nothing lost that matters. */
+    }
+  }
+
+  const pending = remembered(PENDING_EMAIL);
+  if (pending) {
+    email.value = pending;
+    sentTo.textContent = pending;
+  }
+
+  // ── The countdown ───────────────────────────────────────────────────────────────────
+  // Survives a reload, because the server's limit does. A cooldown that resets when the
+  // page does would let someone reload their way into a rate-limit error they were being
+  // protected from.
+
+  let remaining = 0;
+  let ticking: number | undefined;
+
+  function secondsLeft(): number {
+    const last = Number(remembered(LAST_SENT));
+    if (!last) return 0;
+    return Math.max(0, COOLDOWN - Math.floor((Date.now() - last) / 1000));
+  }
+
+  function paint(): void {
+    if (remaining > 0) {
+      submit.disabled = true;
+      submit.textContent = `Send another link in ${remaining}s`;
+      return;
+    }
+
+    submit.disabled = false;
+    submit.textContent = 'Send another link';
+    if (ticking) window.clearInterval(ticking);
+    ticking = undefined;
+  }
+
+  function startCountdown(): void {
+    remaining = secondsLeft();
+    paint();
+    if (remaining > 0 && !ticking) {
+      ticking = window.setInterval(() => {
+        remaining -= 1;
+        paint();
+      }, 1000);
+    }
+  }
+
+  startCountdown();
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    clearFieldErrors(form);
+    hideStatus(status);
+
+    if (!validateFields([{ id: 'email', error: validateEmail(email.value) }], form)) return;
+
+    setBusy(submit, true, 'Sending…');
+
+    const widget = await turnstile;
+    const result = await resendConfirmation(email.value, await widget.token());
+
+    setBusy(submit, false);
+
+    if (!result.ok) {
+      widget.reset();
+      showStatus(status, 'error', result.message);
+      // Re-apply any cooldown still running. A failure that was itself a rate limit must
+      // not leave the button enabled and inviting another one.
+      startCountdown();
+      return;
+    }
+
+    remember(PENDING_EMAIL, email.value.trim());
+    remember(LAST_SENT, String(Date.now()));
+    sentTo.textContent = email.value.trim();
+
+    showStatus(status, 'success', [
+      'Another link is on its way. The earlier one still works too.',
+      'If nothing arrives within a few minutes, the spam folder is the first place to look.',
+    ]);
+
+    startCountdown();
+  });
+</script>

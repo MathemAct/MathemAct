@@ -1,0 +1,454 @@
+---
+/**
+ * The corpus, filtered.
+ *
+ * Every report is rendered into this page at build time and the filters hide and reorder
+ * what is already there. That is not a shortcut around pagination — it is what makes the
+ * filters linkable: the URL is the state, so a filtered view can be pasted into an email or
+ * cited in a paper and the person who opens it sees what the sender saw. A server-rendered
+ * filter would need a server, and there is not one.
+ *
+ * When the corpus outgrows one page — several thousand reports, on the order of a few
+ * megabytes of HTML — this becomes a build-time split by area with the same URL contract.
+ * Not before: a filter that needs a round trip is a filter people stop using.
+ *
+ * The rail, the count, the sort, the chips and the "nothing matches" box are
+ * `src/components/Listing.astro`, shared with /opinions/ and /network/; the ten dimensions
+ * and the six sorts are `REPORT_DIMENSIONS` and `REPORT_SORTS` in `src/lib/listings.ts`,
+ * read both here and by the client script below. What is left in this file is the corpus
+ * itself, which vocabularies to offer, and the freshness overlay.
+ */
+import Base from '../../layouts/Base.astro';
+import Listing from '../../components/Listing.astro';
+import ReportCard from '../../components/ReportCard.astro';
+import Tombstone from '../../components/Tombstone.astro';
+import '../../styles/corpus.css';
+import '../../styles/forms.css';
+import { exportedAt } from '../../lib/manifest';
+import { path } from '../../lib/paths';
+import {
+  AREAS,
+  CAREER_STAGES,
+  GENERALISATIONS,
+  OUTCOME_CHOICES,
+  TASK_TYPES,
+} from '../../lib/report-schema';
+import {
+  HAS_LABELS,
+  RECENCY_LABELS,
+  TIME_BAND_LABELS,
+  hasRunnableReference,
+  recencyBands,
+  timeBand,
+} from '../../lib/report-facets';
+import { REPORT_DIMENSIONS, REPORT_NOUN, REPORT_SORTS, groupsFor } from '../../lib/listings';
+import { listReports, listToolNames, listUsedTags, listAllTags, listInteractionCounts } from '../../lib/reports';
+
+const reports = await listReports();
+const tools = await listToolNames();
+const tags = await listUsedTags();
+const allTags = await listAllTags();
+const tagVocab = Object.fromEntries(allTags.map((t) => [t.code, t.label]));
+const extraInteractions = listInteractionCounts();
+
+/** Only offer a filter that some report actually has. A vocabulary of twelve task types over
+ *  a corpus of four is eleven dead ends and one result — and version 2 added seven filter
+ *  dimensions, so a panel that offered all of them unconditionally would be longer than the
+ *  corpus for a good while yet. */
+const now = new Date();
+const usedAreas = new Set(reports.map((report) => report.area));
+const usedTaskTypes = new Set(
+  reports.flatMap((report) => [report.taskType, ...report.taskSecondary]),
+);
+const usedOutcomes = new Set(reports.map((report) => report.outcome));
+const usedCareerStages = new Set(reports.map((report) => report.careerStage));
+const usedGeneralises = new Set(reports.map((report) => report.generalises));
+const usedRecency = new Set(
+  reports.flatMap((report) => recencyBands(report.staleness.latestToolUse, now)),
+);
+const usedTimeBands = new Set(reports.map((report) => timeBand(report.timeSpentMinutes)));
+
+/** The three "includes" toggles, which are one dimension so that ticking two means both.
+ *  See the `mode: 'all'` note on REPORT_DIMENSIONS. */
+const usedHas = new Set(
+  reports.flatMap((report) => [
+    report.prompts ? 'prompts' : '',
+    report.transcriptExcerpt ? 'transcript' : '',
+    hasRunnableReference(report.references.map((reference) => reference.kind)) ? 'code' : '',
+  ]),
+);
+
+/** Keyed by dimension. `groupsFor()` puts them in the order the engine reads them and drops
+ *  anything empty, so the rail cannot drift out of step with what is being filtered. */
+const groups = groupsFor(REPORT_DIMENSIONS, {
+  area: AREAS.filter((choice) => usedAreas.has(choice.value)).map((choice) => ({
+    value: choice.value,
+    label: choice.label,
+  })),
+  task: TASK_TYPES.filter((choice) => usedTaskTypes.has(choice.value)).map((choice) => ({
+    value: choice.value,
+    label: choice.label,
+  })),
+  outcome: OUTCOME_CHOICES.filter((choice) => usedOutcomes.has(choice.value)).map((choice) => ({
+    value: choice.value,
+    label: choice.label,
+  })),
+  tag: tags.map((tag) => ({ value: tag.code, label: tag.label })),
+  tool: tools.map((tool) => ({ value: tool.toLowerCase(), label: tool })),
+  career: CAREER_STAGES.filter((choice) => usedCareerStages.has(choice.value)).map((choice) => ({
+    value: choice.value,
+    label: choice.label,
+  })),
+  recency: (['6m', '12m'] as const)
+    .filter((band) => usedRecency.has(band))
+    .map((band) => ({ value: band, label: RECENCY_LABELS[band] })),
+  time: (['lt30', '30to120', 'gt120'] as const)
+    .filter((band) => usedTimeBands.has(band))
+    .map((band) => ({ value: band, label: TIME_BAND_LABELS[band] })),
+  has: (['prompts', 'transcript', 'code'] as const)
+    .filter((flag) => usedHas.has(flag))
+    .map((flag) => ({ value: flag, label: HAS_LABELS[flag] })),
+  generalises: GENERALISATIONS.filter((choice) => usedGeneralises.has(choice.value)).map(
+    (choice) => ({ value: choice.value, label: choice.label }),
+  ),
+});
+---
+
+<Base
+  title="Reports"
+  description="First-hand accounts of how mathematicians have used AI tools, filterable by area, task, outcome, subject and tool."
+>
+  {/* The export timestamp travels to the browser on the element rather than through a
+      `define:vars` script, which would have to be inline and could not import anything. The
+      overlay asks the database for rows newer than this and prepends what it finds. */}
+  <div class="shell corpus" data-corpus data-exported-at={exportedAt() ?? ''} data-tags-vocab={JSON.stringify(tagVocab)}>
+    <header class="corpus__header">
+      <h1>Reports</h1>
+      <p class="corpus__lead">
+        First-hand accounts of AI tool use in mathematical work.
+      </p>
+    </header>
+
+    {/* Outside the branch below, so it is here whatever state the corpus is in. It used to
+        exist only inside the empty state, which meant the invitation to post vanished on
+        the day the first report was published — and the empty state is itself hidden by
+        the overlay as soon as one arrives, so there was a window where the page showed a
+        report and no way to write another. */}
+    <p class="corpus__action">
+      <a class="button button--primary" href={path('/reports/new/')}>Post a report</a>
+    </p>
+
+    {/* Rendered whether or not the export had anything in it. An empty corpus is the state
+        in which *everything* a reader can see was posted today and arrived through the
+        freshness overlay — and it used to be the one state with no filters at all, because
+        the rail sat inside the `length > 0` branch. The overlay creates the fieldsets it
+        needs; corpus.css hides a rail that has none yet and closes the grid up behind it. */}
+    <Listing groups={groups} sorts={REPORT_SORTS} noun={REPORT_NOUN} total={reports.length}>
+      <div data-results>
+        {reports.map((report) => (
+          <ReportCard
+            report={report}
+            interactionCount={
+              report.staleness.confirmationCount + (extraInteractions.get(report.id) ?? 0)
+            }
+          />
+        ))}
+      </div>
+
+      {reports.length === 0 && (
+        <div class="empty" data-empty-state>
+          <p class="empty__heading">Nothing has been published yet.</p>
+          <p>
+            The corpus is empty because it has not started. Every account in it will have
+            been written by somebody who did the work and then took ten minutes to say
+            what happened — including, and especially, when it did not go well.
+          </p>
+          {/* No second "post" button here. The one above this box does the same thing,
+              and two filled reds on one screen makes neither of them the thing to do. */}
+          <p class="actions">
+            <a class="button" href={path('/about/')}>What this is for</a>
+          </p>
+        </div>
+      )}
+    </Listing>
+
+    {/* A card for something posted since the export.
+
+        Deliberately not ReportCard: this one carries the marker, and its title is not a
+        link. The page at /reports/<id>/ is generated at build time from the export, so a
+        row newer than the export has no page yet — linking to one would be a 404 dressed up
+        as a result. The marker says so rather than leaving a reader to find out by clicking.
+
+        Written as markup rather than built in script so that the scoped styles below reach
+        it, and so the Tombstone comes from the component that owns the glyph rather than
+        from a second copy of its markup. Everything else here is a class from corpus.css,
+        which is global, so a cloned node is styled like any other card. */}
+    <template data-fresh-card>
+      <article class="card" data-report data-fresh>
+        <div>
+          <Tombstone status="unverified" />
+        </div>
+
+        <p class="card__fresh">
+          <span class="mono">Published <span data-date></span></span>
+        </p>
+
+        <h3 class="card__title"><a data-title></a></h3>
+        <p class="card__aim" data-aim></p>
+
+        <ul class="card__facts" role="list">
+          <li data-area></li>
+          <li data-task></li>
+          <li data-author></li>
+        </ul>
+
+        <ul class="card__tools" role="list" data-tools></ul>
+      </article>
+    </template>
+  </div>
+</Base>
+
+<script>
+  /**
+   * The listing, and at the bottom the freshness overlay.
+   *
+   * Filtering, sorting and the address bar are `createListing()` in
+   * src/lib/listing-filters.ts, shared with /opinions/ and /network/. What is left here is
+   * the part that is only true of reports: which vocabulary names a value that arrived on a
+   * fresh card, and how to build such a card in the first place.
+   */
+  import { reportsSince } from '../../lib/fresh';
+  import type { FreshReport } from '../../lib/fresh';
+  import { longDate } from '../../lib/format';
+  import { createListing } from '../../lib/listing-filters';
+  import { REPORT_DIMENSIONS, REPORT_NOUN, REPORT_SORTS } from '../../lib/listings';
+  import { path } from '../../lib/paths';
+  import {
+    areaLabel,
+    careerStageLabel,
+    generalisesLabel,
+    outcomeLabel,
+    taskTypeLabel,
+  } from '../../lib/report-schema';
+  import {
+    HAS_LABELS,
+    RECENCY_LABELS,
+    TIME_BAND_LABELS,
+    hasRunnableReference,
+    recencyBands,
+    sortValue,
+    timeBand,
+  } from '../../lib/report-facets';
+  import { OUTCOME, tombstoneName } from '../../lib/status';
+
+  const tagVocab: Record<string, string> = JSON.parse(
+    document.querySelector<HTMLElement>('[data-corpus]')?.dataset.tagsVocab ?? '{}',
+  );
+
+  /**
+   * The words for a value the build never saw, because it arrived on a card the freshness
+   * overlay added — the first report to use a tag, a tool nothing else mentions.
+   *
+   * `tool` is the awkward one and is why this takes the card: the dimension filters on
+   * lower-cased keys in `data-tools`, and the display names sit in a parallel
+   * `data-tools-names`, so the label has to be found by position.
+   */
+  function injectLabel(key: string, value: string, card: HTMLElement): string {
+    switch (key) {
+      case 'area':
+        return areaLabel(value);
+      case 'task':
+        return taskTypeLabel(value);
+      case 'outcome':
+        return outcomeLabel(value);
+      case 'career':
+        return careerStageLabel(value);
+      case 'generalises':
+        return generalisesLabel(value);
+      case 'recency':
+        return RECENCY_LABELS[value] ?? value;
+      case 'time':
+        return TIME_BAND_LABELS[value] ?? value;
+      case 'has':
+        return HAS_LABELS[value] ?? value;
+      case 'tag':
+        return tagVocab[value] ?? value;
+      case 'tool': {
+        const index = (card.dataset.tools ?? '').split('|').indexOf(value);
+        return (card.dataset.toolsNames ?? '').split('|')[index] ?? value;
+      }
+      default:
+        return value;
+    }
+  }
+
+  const listing = createListing({
+    cards: [
+      ...document.querySelectorAll<HTMLElement>('[data-results] > [data-report]'),
+    ],
+    dimensions: REPORT_DIMENSIONS,
+    sorts: REPORT_SORTS,
+    noun: REPORT_NOUN,
+    injectLabel,
+  });
+
+  // ── The freshness overlay ───────────────────────────────────────────────────────────
+  //
+  // The corpus on this page is as it stood at the last nightly export. One query asks for
+  // anything newer; whatever comes back is prepended and marked. Everything about it fails
+  // quietly — see src/lib/fresh.ts — because the page is already correct without it and an
+  // error message about a database, on a page that is showing its content, would teach
+  // readers this site depends on something it does not.
+
+  void (async () => {
+    const since = document.querySelector<HTMLElement>('[data-corpus]')?.dataset.exportedAt;
+    const results = document.querySelector<HTMLElement>('[data-results]');
+    const template = document.querySelector<HTMLTemplateElement>('[data-fresh-card]');
+
+    // No manifest means no export, so there is no "since" to ask about and nothing on the
+    // page for an answer to be newer than.
+    if (!since || !results || !template) return;
+
+    const fresh = await reportsSince(since);
+    if (fresh.length === 0) return;
+
+    const added = fresh.map((report) => card(template, report));
+    results.prepend(...added);
+
+    // Joins the cards the filters already know about, so something posted an hour ago is
+    // filtered, counted, tallied and sorted exactly like one from March rather than pinned
+    // above the listing as a separate thing. add() also offers a checkbox for any value the
+    // build had no report to justify — on an empty corpus that is every checkbox there is.
+    listing?.add(added);
+
+    const empty = document.querySelector<HTMLElement>('[data-empty-state]');
+    if (empty) empty.hidden = true;
+  })();
+
+  function card(template: HTMLTemplateElement, report: FreshReport): HTMLElement {
+    const node = (template.content.cloneNode(true) as DocumentFragment)
+      .firstElementChild as HTMLElement;
+
+    // The same attributes ReportCard writes, because the filter and sort code reads the
+    // element rather than any data behind it. A card missing one of these would quietly
+    // fail to match a filter it should have matched — which is why the derived ones go
+    // through src/lib/report-facets.ts, the same functions the build calls, rather than
+    // being computed a second way here.
+    node.dataset.area = report.area;
+    node.dataset.taskType = report.taskType;
+    node.dataset.tasks = [report.taskType, ...report.taskSecondary].join('|');
+    node.dataset.outcome = report.outcome;
+    node.dataset.tools = report.tools
+      .map((tool) => tool.name.trim().toLowerCase())
+      .join('|');
+    node.dataset.toolsNames = report.tools.map((tool) => tool.name.trim()).join('|');
+    node.dataset.tags = report.tags.join('|');
+    node.dataset.career = report.careerStage ?? '';
+    node.dataset.generalises = report.generalises ?? '';
+
+    // The most recent date any of its tools was used, which is what recency is about. The
+    // dates are ISO, so the lexicographic maximum is the chronological one.
+    const latestToolUse = report.tools
+      .map((tool) => tool.usedOn)
+      .filter((date): date is string => Boolean(date))
+      .sort()
+      .at(-1) ?? null;
+
+    node.dataset.recency = recencyBands(latestToolUse, new Date()).join('|');
+    node.dataset.time = timeBand(report.timeSpentMinutes);
+    node.dataset.has = [
+      report.hasPrompts ? 'prompts' : null,
+      report.hasTranscript ? 'transcript' : null,
+      hasRunnableReference(report.referenceKinds) ? 'code' : null,
+    ]
+      .filter((flag) => flag !== null)
+      .join('|');
+
+    node.dataset.helpfulness = sortValue(report.ratingHelpfulness);
+    node.dataset.effort = sortValue(report.ratingVerificationEffort);
+    node.dataset.novelty = sortValue(report.ratingNovelty);
+
+    node.dataset.created = report.createdAt;
+    node.dataset.confirmed = '';
+    node.dataset.confirmations = '0';
+    node.dataset.interactions = '0';
+
+    // Nothing this new has been confirmed by anyone, so the square is open and the status is
+    // `unverified` — which is what the template already renders. Only the outcome colour and
+    // the two labels are per-card.
+    const tombstone = node.querySelector<HTMLElement>('.tombstone');
+    if (tombstone) {
+      tombstone.dataset.outcome = report.outcome;
+      tombstone.setAttribute('aria-label', tombstoneName('unverified', report.outcome));
+      const label = tombstone.querySelector<HTMLElement>('.tombstone__label');
+      if (label) label.textContent = OUTCOME[report.outcome].label;
+    }
+
+    const titleLink = node.querySelector<HTMLAnchorElement>('[data-title]');
+    if (titleLink) {
+      titleLink.textContent = report.title;
+      titleLink.href = `view/?id=${report.id}`;
+    }
+    put(node, '[data-date]', longDate(report.createdAt));
+    put(node, '[data-aim]', report.aim);
+    put(node, '[data-area]', areaLabel(report.area));
+    put(node, '[data-task]', taskTypeLabel(report.taskType));
+
+    // Linked, and to /authors/view/ rather than /authors/<id>/. Author pages are generated
+    // from the corpus, so the author of a report this new frequently has no static page —
+    // it is often their first submission. Same reasoning as the title link above.
+    const author = node.querySelector<HTMLElement>('[data-author]');
+    if (author) {
+      if (report.authorName && report.authorId) {
+        const link = document.createElement('a');
+        link.href = path(`/authors/view/?id=${report.authorId}`);
+        link.textContent = report.authorName;
+        author.append(link);
+      } else {
+        const erased = document.createElement('span');
+        erased.className = 'card__erased';
+        erased.textContent = 'Author since erased';
+        author.append(erased);
+      }
+    }
+
+    const tools = node.querySelector<HTMLElement>('[data-tools]');
+    if (tools) {
+      for (const tool of report.tools) tools.append(chip(tool.name, tool.version));
+      for (const tag of report.tags) tools.append(chip(tag, null, true));
+    }
+
+    return node;
+  }
+
+  function put(root: HTMLElement, selector: string, text: string): void {
+    const element = root.querySelector<HTMLElement>(selector);
+    if (element) element.textContent = text;
+  }
+
+  /** A tool or tag chip. Built rather than cloned, because `.tool-chip` is a global class in
+   *  corpus.css — the report page uses it too — so a created element is styled correctly. */
+  function chip(name: string, version: string | null, isTag = false): HTMLElement {
+    const item = document.createElement('li');
+    item.className = isTag ? 'tool-chip tool-chip--tag' : 'tool-chip';
+
+    const label = document.createElement('span');
+    label.className = 'tool-chip__name';
+    label.textContent = name;
+    item.append(label);
+
+    if (version) {
+      const number = document.createElement('span');
+      number.className = 'tool-chip__version';
+      number.textContent = version;
+      item.append(number);
+    }
+
+    return item;
+  }
+</script>
+
+{/* No scoped styles. `.card__fresh` is in corpus.css — reports and entries both show it,
+    and a scoped rule here would not reach the cloned template node on the other page. The
+    `.listing--fresh` block that used to live here went with the separate empty-corpus
+    container: there is one listing now, in every state. */}

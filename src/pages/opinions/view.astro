@@ -1,0 +1,548 @@
+---
+/**
+ * Client-rendered claim viewer for claims that do not yet have a static page.
+ *
+ * A claim is added to the export by the nightly workflow, so between the moment
+ * someone posts one and the following build there is no /opinions/<id>/ to visit. The
+ * freshness overlay on the listing shows those new claims but cannot link them — that
+ * link would be a 404 dressed as a result.
+ *
+ * This page is the answer. It fetches the claim from Supabase at runtime, exactly as
+ * /moderate/ does, and renders the same layout as the static claim pages. The
+ * canonical URL for a claim is still /opinions/<id>/ once the build has run; this
+ * page is only ever reached from the freshness overlay.
+ *
+ * One Supabase read (anon, plain fetch) gets the statement, rationale, area, author, and
+ * dates. Everything else — ratings, the histogram, comments — is already client-side on the
+ * static pages too, so the page initialises exactly the same way once it has the ID.
+ */
+import Base from '../../layouts/Base.astro';
+import AnswerContribution from '../../components/AnswerContribution.astro';
+import Contributions from '../../components/Contributions.astro';
+import FormStatus from '../../components/FormStatus.astro';
+import Histogram from '../../components/Histogram.astro';
+import RatingScale from '../../components/RatingScale.astro';
+import References from '../../components/References.astro';
+import '../../styles/corpus.css';
+import '../../styles/forms.css';
+import { path } from '../../lib/paths';
+---
+
+<Base title="Claim" description="A claim submitted to MathemAct.">
+  <div class="shell corpus claim">
+    <p class="breadcrumb"><a href={path('/opinions/')}>← All opinions</a></p>
+
+    <div data-loading>
+      <p class="field__hint">Loading…</p>
+    </div>
+
+    <div data-error hidden>
+      <p>This claim could not be found, or has been removed.</p>
+      <p><a href={path('/opinions/')}>Back to all opinions</a></p>
+    </div>
+
+    <div data-content hidden>
+      <header data-quotable>
+        <span data-pagefind-filter="type:claim" hidden></span>
+        <p class="claim__label">
+          <span class="meta" data-status-label></span>
+        </p>
+
+        {/* An h1 for the same reason as on /opinions/<id>/ — see the note there. Empty
+            until the fetch lands, which is why it sits inside the hidden [data-content]
+            wrapper: an h1 with no text is worse than no h1. */}
+        <blockquote class="claim__statement">
+          <h1 data-statement></h1>
+        </blockquote>
+
+        {/* No date line, matching /opinions/<id>/. "Active since <date>" described a lifecycle
+            the site stopped having on 2026-08-18, and dating a standing question framed it as
+            news. */}
+        <ul class="card__facts" role="list">
+          <li data-pagefind-filter="area" data-area></li>
+          <li data-author></li>
+        </ul>
+      </header>
+
+      <section class="field-block" data-rationale hidden data-quotable>
+        <span class="field-block__label">Why this was proposed</span>
+        <p class="field-block__body" data-rationale-text></p>
+      </section>
+
+      {/* No `data-contributions` or `data-position-changes`: this page exists for a claim the
+          export has never seen, so those two figures do not exist for it and the statistics
+          line ends after the mean. That is the point of them being absent rather than zero. */}
+      <section class="rate" data-rate data-claim-id="" data-pagefind-ignore>
+        {/* Removed outright once they have answered, exactly as on /opinions/<id>/. */}
+        <div data-rate-ask hidden>
+          <h2>Where do you stand?</h2>
+
+        <div class="panel" data-rate-signedout hidden>
+          <p>
+            <a href={path('/account/sign-in/')}>Sign in</a> to answer this one. The distribution
+            appears once you have — you are asked what you think before you are told what
+            everybody else thinks.
+          </p>
+        </div>
+
+        <div class="panel" data-rate-unconfirmed hidden>
+          <p>
+            Answering needs a confirmed email address.
+            <a href={path('/account/confirm/')}>Get another confirmation link</a>.
+          </p>
+        </div>
+
+        {/* The same form as /opinions/<id>/. A claim newer than the build has no contributions
+            on this page to endorse, so the reason half is the writing box alone. */}
+        <form class="form" data-rate-form hidden novalidate>
+          <RatingScale name="score" />
+
+          <AnswerContribution contributions={[]} />
+
+          <div class="actions">
+            <button class="button button--primary" type="submit">Record my position</button>
+          </div>
+
+          <FormStatus id="rate-status" />
+        </form>
+        </div>
+
+        <p class="rate__withheld" data-rate-withheld hidden>
+          The distribution is hidden until you have answered, so that what other people think
+          does not decide what you think.
+        </p>
+
+        <div data-aggregate-wrap hidden>
+          <h2>How people answered</h2>
+          <Histogram />
+
+          <p class="rate__again">
+            <button class="button" type="button" data-rate-again>Update my answer</button>
+          </p>
+
+          <FormStatus id="rate-outcome" />
+        </div>
+      </section>
+
+      <References incoming={[]} outgoing={[]} />
+
+      {/* Empty, and it stays empty. This page exists for a claim the export has never seen,
+          so it has no contributions to group — a brand-new claim cannot have any, because
+          writing one requires having answered it. The section renders its own "nobody has
+          written a contribution yet" state, which is the truth here rather than a fallback. */}
+      <div data-pagefind-ignore>
+        <Contributions parentId="" contributions={[]} title="" href="" />
+      </div>
+    </div>
+  </div>
+</Base>
+
+<script>
+  import { renderHistogram } from '../../lib/histogram';
+  import { answerClaim, loadAggregate, loadMyRating } from '../../lib/claims';
+  import { ANSWER_NEEDS_A_REASON, wireAnswerReason } from '../../lib/answer-form';
+  import { loadProfile, mayPost } from '../../lib/profile';
+  import { startSession, subscribeToSession } from '../../lib/session';
+  import { hideStatus, query, setBusy, showStatus } from '../../lib/forms';
+  import { areaLabel } from '../../lib/report-schema';
+  import { handOverToBuiltPage } from '../../lib/handover';
+  import { path } from '../../lib/paths';
+
+  const params = new URLSearchParams(window.location.search);
+  const id = params.get('id');
+
+  const loadingEl = document.querySelector<HTMLElement>('[data-loading]')!;
+  const errorEl = document.querySelector<HTMLElement>('[data-error]')!;
+  const contentEl = document.querySelector<HTMLElement>('[data-content]')!;
+
+  if (!id) {
+    loadingEl.hidden = true;
+    errorEl.hidden = false;
+  } else if (!(await handOverToBuiltPage(id, path(`/opinions/${id}/`)))) {
+    // Still here: the claim is newer than the build, so this page renders it.
+    await init(id);
+  }
+
+  async function init(claimId: string): Promise<void> {
+    const claim = await fetchClaim(claimId);
+
+    if (!claim) {
+      loadingEl.hidden = true;
+      errorEl.hidden = false;
+      return;
+    }
+
+    // Populate static content.
+    document.title = `${claim.statement} | MathemAct`;
+
+    const statusLabel = document.querySelector<HTMLElement>('[data-status-label]')!;
+    statusLabel.textContent =
+      claim.status === 'active' ? 'Active claim' : 'Proposed';
+
+    const statementEl = document.querySelector<HTMLElement>('[data-statement]')!;
+    statementEl.textContent = claim.statement;
+
+    const areaEl = document.querySelector<HTMLElement>('[data-area]')!;
+    areaEl.textContent = areaLabel(claim.area);
+
+    const authorEl = document.querySelector<HTMLElement>('[data-author]')!;
+    if (claim.author) {
+      authorEl.append('Proposed by ');
+      // /authors/view/, not /authors/<id>/, for the same reason this page exists: a
+      // claim reached here is newer than the last build, and its author may be too.
+      const link = document.createElement('a');
+      link.href = path(`/authors/view/?id=${claim.author.id}`);
+      link.textContent = claim.author.displayName;
+      authorEl.append(link);
+      if (claim.author.isPseudonym) authorEl.append(' (a pseudonym)');
+    } else {
+      const erased = document.createElement('span');
+      erased.className = 'card__erased';
+      erased.textContent = 'Proposer since erased';
+      authorEl.appendChild(erased);
+    }
+
+    if (claim.rationale) {
+      const rationaleSection = document.querySelector<HTMLElement>('[data-rationale]')!;
+      const rationaleText = document.querySelector<HTMLElement>('[data-rationale-text]')!;
+      rationaleText.textContent = claim.rationale;
+      rationaleSection.hidden = false;
+    }
+
+    // Wire up the interactive sections with the now-known ID.
+    const rateSection = query<HTMLElement>('[data-rate]');
+    rateSection.dataset.claimId = claimId;
+
+    /**
+     * The contributions section, which needs the id it was rendered without.
+     *
+     * This read `[data-thread]` with a `!` on it until 2026-08-22, and `[data-thread]` is
+     * `CommentThread.astro` — which this page stopped using when claims moved to
+     * `Contributions.astro`. The assertion silenced the null the type system had correctly
+     * inferred, so the line survived `astro check` and would have thrown a TypeError on the
+     * next `.dataset` access, taking the rest of this function with it. That is the trap
+     * CLAUDE.md records about accumulating `!`s, arriving by a different route.
+     *
+     * Written rather than captured: the composer reads `parentId` at call time for exactly
+     * this reason — on this page the id does not exist until the fetch above has landed.
+     */
+    // By class as well: on /opinions/<id>/ the rating section carries `data-contributions` too,
+    // and the bare attribute selector found it first. See the note in Contributions.astro.
+    const section = document.querySelector<HTMLElement>('.contributions[data-contributions]');
+    if (section) {
+      section.dataset.parentId = claimId;
+      section.dataset.nodeTitle = claim.statement;
+      section.dataset.nodeHref = path(`/opinions/${claimId}/`);
+      // The section's overlay waits for this: with no build behind this page it fetches every
+      // contribution on the claim, which is the only way they appear here at all.
+      section.dispatchEvent(new CustomEvent('contributions-ready'));
+    }
+
+    // Reveal the content.
+    loadingEl.hidden = true;
+    contentEl.hidden = false;
+
+    // Initialise the rating section — same logic as the static claim page.
+    initRating(claimId);
+  }
+
+  // ── Rating ────────────────────────────────────────────────────────────────────────────
+
+  function initRating(claimId: string): void {
+    const root = query<HTMLElement>('[data-rate]');
+    const ask = query<HTMLElement>('[data-rate-ask]', root);
+    const signedOut = query<HTMLElement>('[data-rate-signedout]', root);
+    const unconfirmed = query<HTMLElement>('[data-rate-unconfirmed]', root);
+    const form = query<HTMLFormElement>('[data-rate-form]', root);
+    const withheld = query<HTMLElement>('[data-rate-withheld]', root);
+    const wrap = query<HTMLElement>('[data-aggregate-wrap]', root);
+    const histogram = query<HTMLElement>('[data-histogram]', root);
+    const again = query<HTMLButtonElement>('[data-rate-again]', root);
+    const status = query<HTMLElement>('#rate-status', root);
+    const outcome = query<HTMLElement>('#rate-outcome', root);
+    const submit = query<HTMLButtonElement>('button[type="submit"]', form);
+
+    let userId: string | null = null;
+    let iRated = false;
+    let myScore: number | null = null;
+
+    /** Set for one reveal only: the one immediately after a rating that *changed*. A first
+     *  answer is not a position change, and neither is arriving on the page already having
+     *  answered — so it is turned off again as soon as the reveal has read it. */
+    let justChanged = false;
+    let justPosted = false;
+
+    /**
+     * The reason half. Nothing on this page says whether the reader already wrote or endorsed
+     * here — there are no contributions in it — so `alreadyContributed` is false and a scored
+     * first answer is asked for text. A reader who did contribute from another tab is asked for a
+     * reason the database would not have needed; that is the side to err on.
+     */
+    const reason = wireAnswerReason(form);
+
+    subscribeToSession((state) => {
+      if (state.status === 'loading') return;
+
+      if (state.status !== 'signed-in') {
+        userId = null;
+        ask.hidden = false;
+        signedOut.hidden = false;
+        form.hidden = true;
+        withheld.hidden = false;
+        return;
+      }
+
+      if (userId === state.userId) return;
+      userId = state.userId;
+      void open(state.userId);
+    });
+
+    void startSession();
+
+    async function open(id: string): Promise<void> {
+      const profile = await loadProfile(id);
+
+      if (profile.ok && !mayPost(profile.value)) {
+        ask.hidden = false;
+        unconfirmed.hidden = false;
+        withheld.hidden = false;
+        return;
+      }
+
+      const mine = await loadMyRating(claimId, id);
+      if (!mine.ok) {
+        ask.hidden = false;
+        form.hidden = false;
+        withheld.hidden = false;
+        showStatus(status, 'error', mine.message);
+        return;
+      }
+
+      iRated = mine.value.rated;
+      myScore = mine.value.score;
+      reason?.setReader({
+        userId: id,
+        rated: iRated,
+        previousScore: myScore,
+        alreadyContributed: false,
+        endorsed: new Set(),
+      });
+
+      if (iRated) {
+        reflect();
+        submit.textContent = 'Update my answer';
+        await reveal();
+      } else {
+        ask.hidden = false;
+        form.hidden = false;
+        withheld.hidden = false;
+      }
+    }
+
+    function reflect(): void {
+      const value = myScore === null ? 'none' : String(myScore);
+      const input = form.querySelector<HTMLInputElement>(
+        `input[name="score"][value="${value}"]`,
+      );
+      if (!input) return;
+      input.checked = true;
+      // Setting `checked` fires nothing; the reason half listens for `change`.
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    async function reveal(): Promise<boolean> {
+      const aggregate = await loadAggregate(claimId);
+      if (!aggregate.ok) {
+        ask.hidden = false;
+        form.hidden = false;
+        showStatus(status, 'error', aggregate.message);
+        return false;
+      }
+
+      ask.hidden = true;
+      withheld.hidden = true;
+      wrap.hidden = false;
+
+      // No static counts on this page: a claim the export has never seen has no contribution
+      // count and no position-change count, and the line ends after the mean rather than
+      // claiming both are zero.
+      renderHistogram(histogram, aggregate.value, myScore, iRated);
+
+      // The same event /opinions/<id>/ sends, and it matters more here than there: this page is
+      // what a claim posted since the last build looks like, so the person answering it is
+      // frequently about to write its first contribution. Without this the contributions section
+      // never learns they have answered, and the composer never appears.
+      document.dispatchEvent(
+        new CustomEvent('mathemact:rated', {
+          detail: {
+            rated: iRated,
+            score: myScore,
+            // True only when this reveal follows a *change*, not a first answer or a
+            // page load. A position change is an event; answering the first time is not.
+            changed: justChanged && !justPosted,
+            histogram: aggregate.value.histogram,
+            noOpinionCount: aggregate.value.noOpinionCount,
+          },
+        }),
+      );
+
+      return true;
+    }
+
+    again.addEventListener('click', () => {
+      hideStatus(status);
+      hideStatus(outcome);
+      ask.hidden = false;
+      form.hidden = false;
+      reflect();
+      form.querySelector<HTMLInputElement>('input[name="score"]:checked')?.focus();
+    });
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      hideStatus(status);
+
+      if (!userId) return;
+
+      const chosen = form.querySelector<HTMLInputElement>(
+        'input[name="score"]:checked',
+      )?.value;
+      if (chosen === undefined) {
+        showStatus(
+          status,
+          'error',
+          'Choose a point on the scale, or say that you have no opinion — that is a real answer and it is recorded as one.',
+        );
+        return;
+      }
+
+      const offScale = chosen === 'none';
+      const score = offScale ? null : Number(chosen);
+      const editing = iRated;
+
+      // Convenience here, the rule in the database — same sentence in both.
+      const given = reason?.collect() ?? { body: '', endorsements: [] };
+      if (reason?.required() && given.body === '' && given.endorsements.length === 0) {
+        showStatus(status, 'error', ANSWER_NEEDS_A_REASON);
+        reason.focus();
+        return;
+      }
+
+      setBusy(submit, true, editing ? 'Updating…' : 'Recording…');
+      const result = await answerClaim({
+        claimId,
+        score,
+        offScale,
+        body: given.body,
+        endorsements: given.endorsements,
+      });
+      setBusy(submit, false);
+
+      if (!result.ok) {
+        showStatus(status, 'error', result.message);
+        return;
+      }
+
+      iRated = true;
+      myScore = score;
+      submit.textContent = 'Update my answer';
+      reason?.saved({ score, ...given });
+
+      justChanged = editing;
+      justPosted = given.body !== '';
+      const revealed = await reveal();
+      justChanged = false;
+      justPosted = false;
+
+      // Into the contributions section, as on /opinions/<id>/.
+      if (result.value) {
+        document.dispatchEvent(
+          new CustomEvent('mathemact:contributed', { detail: { id: result.value } }),
+        );
+      }
+
+      // See /opinions/<id>/: a contribution carries its position publicly, so the usual line
+      // about answers never appearing beside a name is not said of one.
+      const recorded = given.body
+        ? 'Recorded, with your contribution. It shows the position you wrote it from.'
+        : editing
+          ? 'Your position has been updated.'
+          : 'Recorded. Your answer is never shown beside your name — only the distribution is.';
+
+      // Whichever of the two status elements is actually on screen — see the note on the same
+      // branch in /opinions/<id>/. Writing the confirmation into the hidden one left a reader
+      // seeing only reveal()'s error, which says "nothing was saved" about a saved answer.
+      if (revealed) {
+        showStatus(outcome, 'success', recorded);
+      } else {
+        showStatus(status, 'notice', [
+          recorded,
+          'The distribution could not be loaded, so it is not shown below. Your answer is saved; reload the page to try again.',
+        ]);
+      }
+    });
+  }
+
+  // ── Data fetch ────────────────────────────────────────────────────────────────────────
+
+  interface FetchedClaim {
+    readonly id: string;
+    readonly statement: string;
+    readonly rationale: string | null;
+    readonly status: 'proposed' | 'active';
+    readonly area: string;
+    readonly createdAt: string;
+    readonly activatedAt: string | null;
+    readonly author: {
+      readonly id: string;
+      readonly displayName: string;
+      readonly isPseudonym: boolean;
+    } | null;
+  }
+
+  async function fetchClaim(id: string): Promise<FetchedClaim | null> {
+    const base = import.meta.env.PUBLIC_SUPABASE_URL as string | undefined;
+    const key = import.meta.env.PUBLIC_SUPABASE_ANON_KEY as string | undefined;
+    if (!base || !key) return null;
+
+    const select = [
+      'id,statement,rationale,status,area,created_at,activated_at',
+      'author:profiles!claims_author_id_fkey(id,display_name,is_pseudonym)',
+    ].join(',');
+
+    try {
+      const response = await fetch(
+        `${base}/rest/v1/claims` +
+          `?select=${encodeURIComponent(select)}` +
+          `&id=eq.${encodeURIComponent(id)}` +
+          `&status=neq.hidden`,
+        { headers: { apikey: key, Authorization: `Bearer ${key}` } },
+      );
+
+      if (!response.ok) return null;
+
+      const rows = await response.json();
+      if (!Array.isArray(rows) || rows.length === 0) return null;
+
+      const row = rows[0];
+      return {
+        id: row.id,
+        statement: row.statement,
+        rationale: row.rationale ?? null,
+        status: row.status,
+        area: row.area,
+        createdAt: row.created_at,
+        activatedAt: row.activated_at ?? null,
+        author: row.author
+          ? {
+              id: row.author.id,
+              displayName: row.author.display_name,
+              isPseudonym: row.author.is_pseudonym,
+            }
+          : null,
+      };
+    } catch {
+      return null;
+    }
+  }
+</script>

@@ -1,0 +1,11 @@
+# Normalise line endings to LF in the repository. Development happens on Windows and CI
+# runs on Linux; without this, checked-in CRLF turns every cross-platform edit into a
+# whole-file diff and can confuse tools that expect LF, SQL migrations included.
+* text=auto eol=lf
+
+# Binary, never normalise or diff as text.
+*.woff2 binary
+*.woff  binary
+*.png   binary
+*.jpg   binary
+*.ico   binary

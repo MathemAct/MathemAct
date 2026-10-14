@@ -1,0 +1,1487 @@
+---
+/**
+ * The moderation queue.
+ *
+ * **This page is a 404 until it is not.** What ships is the not-found page, word for word;
+ * the queue is built from templates by script only after the signed-in account's own profile
+ * row comes back with a moderator or admin role. Anyone else — signed out, signed in as a
+ * member, or unable to reach the database at all — sees exactly what a mistyped URL gives
+ * them, with no hint that anything else exists here.
+ *
+ * Be precise about what that does and does not buy, because overstating it would be worse
+ * than not doing it. It is not a secret: the templates are in this page's HTML and the
+ * script is in the bundle, so anyone who guesses the address and reads the source knows the
+ * screen exists. What it prevents is the ordinary case — a crawler indexing it, a link
+ * getting shared, a curious reader finding a "Moderation: you are not allowed" page and
+ * concluding there is something here worth attacking. **The data is not defended by this
+ * page at all.** It is defended by row level security: a member who calls the same queries
+ * gets empty arrays, and public.moderate() refuses them by name. The 404 is manners; the
+ * database is the wall.
+ *
+ * There is no navigation link to this address anywhere on the site, deliberately. It is in
+ * docs/moderation.md, which is where a new moderator is pointed.
+ */
+import Base from '../../layouts/Base.astro';
+import FormStatus from '../../components/FormStatus.astro';
+// Buttons, panels and the form status region. Imported here rather than inherited, because
+// this page uses Base directly: the Account layout is the usual home of these styles and
+// this is not an account page.
+import '../../styles/forms.css';
+import { path } from '../../lib/paths';
+---
+
+<Base
+  title="Page not found"
+  description="That address does not match anything on MathemAct."
+  noindex
+>
+  {/* Identical to src/pages/404.astro. If that page's wording changes, this has to change
+      with it: two "page not found" pages that word it differently are a tell. */}
+  <div class="shell page" data-not-found>
+    <div class="prose">
+      <h1>Page not found</h1>
+
+      <p>
+        That address does not match anything on this site. It may have been mistyped, or
+        the page may have been removed.
+      </p>
+
+      <p><a href={path('/')}>Go to the home page</a></p>
+    </div>
+  </div>
+
+  <div class="shell queue" data-moderate hidden>
+    <header class="queue__header">
+      <h1>Moderation</h1>
+      <p class="queue__lead">
+        Nothing waits for you before it is published. What is here is what somebody flagged,
+        and what a decision has already taken off the site. Every action is recorded with
+        your name, the time, and your explanation — and that explanation is shown to whoever
+        wrote the post and to whoever flagged it, so write it to them.
+      </p>
+      <p class="mono queue__tally" data-tally></p>
+    </header>
+
+    <FormStatus id="queue-status" />
+
+    {/* Emitted only by `astro dev`. import.meta.env.DEV is false during a production build,
+        so this markup is not in the deployed page at all — the same guard that removes the
+        fixture data from the bundle. */}
+    {
+      import.meta.env.DEV && (
+        <div class="panel" data-fixtures hidden>
+          <p class="panel__heading">Fixtures</p>
+          <p>
+            These rows are invented and no action does anything. Drop <code>?fixtures</code>{' '}
+            from the address to work against the real queue.
+          </p>
+        </div>
+      )
+    }
+
+    <section class="queue__section" data-section="flags">
+      <h2>Open flags <span class="mono" data-count></span></h2>
+      <p class="queue__note">
+        Oldest first, and the whole of what was flagged is below each one — decide from that
+        rather than from what the flag says about it. Two answers: hide it, or leave it up.
+        Hiding also closes every other flag against the same post, and everyone who raised
+        one is told what you wrote. Banning the account is a separate decision about a person
+        rather than an answer to this flag, so it leaves the flag open — decide that too.
+      </p>
+      <ol class="queue__list" data-list role="list"></ol>
+      <p class="queue__more" data-more hidden>
+        <button class="button button--quiet" data-load-more="flags">Load 20 more flags</button>
+      </p>
+      <p class="queue__empty" data-empty hidden>No open flags.</p>
+    </section>
+
+    <section class="queue__section" data-section="hidden">
+      <h2>Hidden <span class="mono" data-count></span></h2>
+      <p class="queue__note">
+        Hidden content is still there, still readable by its author, and — for a report or an
+        entry — editable by them while it stays hidden. Unhiding publishes it again, and
+        needs a sentence too: the author is told either way.
+      </p>
+
+      <div data-subsection="hidden-reports" hidden>
+        <h3 class="queue__subhead">Reports</h3>
+        <ol class="queue__list" data-list role="list"></ol>
+        <p class="queue__more" data-more hidden>
+          <button class="button button--quiet" data-load-more="hidden-reports">Load 20 more reports</button>
+        </p>
+      </div>
+
+      <div data-subsection="hidden-claims" hidden>
+        <h3 class="queue__subhead">Claims</h3>
+        <ol class="queue__list" data-list role="list"></ol>
+        <p class="queue__more" data-more hidden>
+          <button class="button button--quiet" data-load-more="hidden-claims">Load 20 more claims</button>
+        </p>
+      </div>
+
+      <div data-subsection="hidden-comments" hidden>
+        <h3 class="queue__subhead">Comments</h3>
+        <ol class="queue__list" data-list role="list"></ol>
+        <p class="queue__more" data-more hidden>
+          <button class="button button--quiet" data-load-more="hidden-comments">Load 20 more comments</button>
+        </p>
+      </div>
+
+      <div data-subsection="hidden-entries" hidden>
+        <h3 class="queue__subhead">Network entries</h3>
+        <ol class="queue__list" data-list role="list"></ol>
+        <p class="queue__more" data-more hidden>
+          <button class="button button--quiet" data-load-more="hidden-entries">Load 20 more entries</button>
+        </p>
+      </div>
+
+      <p class="queue__empty" data-empty hidden>Nothing is hidden.</p>
+    </section>
+
+    {/* The one section not driven by a queue, because the thing it is for does not arrive as
+        one. Somebody posting the same advertisement eleven times is rarely flagged — people
+        leave rather than flag — and a network entry cannot be flagged at all. So a ban
+        reachable only from a flag is a ban unreachable in the case it exists for. */}
+    <section class="queue__section" data-section="accounts">
+      <h2>Accounts</h2>
+      <p class="queue__note">
+        A ban is about an account rather than about a post: spam, or hostility that no single
+        hide answers. It stops posting, commenting, rating, confirming and flagging, and leaves
+        everything the account has already posted exactly where it is — taking those down is a
+        separate decision, one per post. It is reversible, and the account holder reads what
+        you write.
+      </p>
+
+      <form class="search" data-account-search novalidate>
+        <label class="reason__label" for="account-term">Find an account by display name</label>
+        <div class="search__row">
+          <input
+            class="search__box"
+            type="search"
+            id="account-term"
+            name="term"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button class="button" type="submit">Search</button>
+        </div>
+        <p class="reason__hint">
+          Two characters or more, matched anywhere in the name. No address is shown here or
+          anywhere else on this screen — there is no column holding one.
+        </p>
+      </form>
+
+      <div data-subsection="found" hidden>
+        <h3 class="queue__subhead">Matches <span class="mono" data-count></span></h3>
+        <ol class="queue__list" data-list role="list"></ol>
+      </div>
+
+      <p class="queue__empty" data-no-match hidden>
+        No account has a display name like that. A pseudonym is matched the same way as a
+        name.
+      </p>
+
+      <div data-subsection="banned" hidden>
+        <h3 class="queue__subhead">Banned now <span class="mono" data-count></span></h3>
+        <ol class="queue__list" data-list role="list"></ol>
+      </div>
+
+      <p class="queue__empty" data-none-banned hidden>Nobody is banned.</p>
+    </section>
+
+    <section class="queue__section" data-section="erasures" hidden>
+      <h2>Erasure requests <span class="mono" data-count></span></h2>
+      <p class="queue__note">
+        Admins only. Erasing removes the account and its profile, and detaches everything it
+        contributed — the reports stay in the corpus under CC BY with no name on them. It
+        cannot be undone and the log will not record whose account it was.
+      </p>
+      <ol class="queue__list" data-list role="list"></ol>
+      <p class="queue__more" data-more hidden>
+        <button class="button button--quiet" data-load-more="erasures">Load 20 more requests</button>
+      </p>
+      <p class="queue__empty" data-empty hidden>No standing requests.</p>
+    </section>
+  </div>
+
+  {/* ── Templates ────────────────────────────────────────────────────────────────────
+      Markup rather than strings in the script, for the ordinary reason — this is where the
+      accessible structure lives and it should be readable as markup — and for one specific
+      to Astro: a scoped style is compiled against elements authored in this file, so a node
+      built with createElement would carry no scope attribute and match none of the CSS
+      below. Cloned template content does. */}
+
+  {/* The whole of a flagged report, cloned into the flag item below. It has no controls of
+      its own: a report is never decided on its own terms any more, only as the answer to
+      something somebody raised about it. */}
+  <template data-template="report-detail">
+    <dl class="fields">
+      <dt>Tools</dt>
+      <dd class="mono" data-tools></dd>
+
+      <dt>Aim</dt>
+      <dd data-aim></dd>
+
+      <dt>Method</dt>
+      <dd class="pre" data-method></dd>
+
+      <dt>Outcome</dt>
+      <dd><span class="mono" data-outcome></span> — <span data-outcome-notes></span></dd>
+
+      <dt>Verification</dt>
+      <dd class="pre" data-verification></dd>
+
+      <div data-optional hidden>
+        <dt>Caveats</dt>
+        <dd data-caveats></dd>
+      </div>
+
+      <div data-optional hidden>
+        <dt>What they learned</dt>
+        <dd data-learned-notes></dd>
+      </div>
+
+      {/* Three levels of optional, and they are not the same question: the block appears
+          when there is anything at all, the disclosure when there is an excerpt, and the
+          link when there is a link. Hanging them all off one flag would hide a pasted
+          transcript because nobody had a share URL for it. */}
+      <div data-transcript-block hidden>
+        <dt>Transcript</dt>
+        <dd>
+          <details class="transcript" data-optional hidden>
+            <summary>Show the excerpt</summary>
+            <pre class="pre" data-transcript></pre>
+          </details>
+          <p class="mono" data-transcript-url data-optional hidden></p>
+        </dd>
+      </div>
+
+      <dt>Tags</dt>
+      <dd class="mono" data-tags></dd>
+
+      <dt>So it can be counted</dt>
+      <dd class="mono" data-counting></dd>
+    </dl>
+  </template>
+
+  <template data-template="flag">
+    <li class="item">
+      <div class="item__head">
+        <h3 class="item__title" data-title></h3>
+        <p class="mono item__meta" data-meta></p>
+      </div>
+
+      <blockquote class="flag__detail" data-optional hidden>
+        <p data-detail></p>
+      </blockquote>
+
+      <div class="flag__subject">
+        <p class="mono flag__subject-head" data-subject-meta></p>
+        <p class="flag__subject-title" data-subject-title></p>
+        <p class="pre" data-subject-body></p>
+        <div data-subject-detail></div>
+        <p data-optional hidden><a data-subject-link>Open the page</a></p>
+      </div>
+
+      <p class="flag__gone" data-gone hidden>
+        The flagged row is no longer readable — it has been deleted outright rather than
+        hidden. Closing the flag is usually right; say so, and whoever raised it is told.
+      </p>
+
+      <div class="reason">
+        <label class="reason__label" data-reason-label>Why, in a sentence</label>
+        <textarea class="reason__box" rows="3" data-reason maxlength="1000"></textarea>
+        <p class="reason__hint">
+          Required, and it is not written to the log alone: the person who wrote the post and
+          the person who flagged it both read exactly this. Say what rule applies, or that
+          none does.
+        </p>
+      </div>
+
+      <div class="actions">
+        <button class="button button--primary" data-act="hide">Hide it</button>
+        <button class="button" data-act="dismiss_flag">Leave it up</button>
+        <button class="button" data-act="resolve_flag">Close: already gone</button>
+        <button class="button button--quiet" data-act="ban">Ban that account</button>
+      </div>
+    </li>
+  </template>
+
+  <template data-template="hidden">
+    <li class="item item--compact">
+      <div class="item__head">
+        <h3 class="item__title" data-title></h3>
+        <p class="mono item__meta" data-meta></p>
+      </div>
+
+      <p class="pre" data-body></p>
+
+      <div class="item__note" data-optional hidden>
+        <p class="item__note-head">Revised by its author <span class="mono" data-note-at></span></p>
+        <p data-note></p>
+      </div>
+
+      {/* One box for both buttons, so the label has to cover both. Whichever is pressed, the
+          same person reads the same sentence — the author of the post, who is also the holder
+          of the account. */}
+      <div class="reason">
+        <label class="reason__label" data-reason-label>Why, in a sentence</label>
+        <textarea class="reason__box" rows="2" data-reason maxlength="1000"></textarea>
+        <p class="reason__hint">Required. Whoever posted this reads exactly this.</p>
+      </div>
+
+      <div class="actions">
+        <button class="button" data-act="unhide">Unhide</button>
+        <button class="button button--quiet" data-act="ban">Ban that account</button>
+      </div>
+    </li>
+  </template>
+
+  <template data-template="account">
+    <li class="item item--compact">
+      <div class="item__head">
+        <h3 class="item__title" data-title></h3>
+        <p class="mono item__meta" data-meta></p>
+      </div>
+
+      {/* public.moderate() refuses to ban an account with moderation standing, so the screen
+          says so and offers nothing rather than a button that raises. */}
+      <p class="account__standing" data-standing hidden>
+        This account moderates. Changing that needs direct database access, so one compromised
+        session cannot disable the people who would notice.
+      </p>
+
+      {/* The runtime author page, not the generated one. /authors/<id>/ exists only for
+          somebody who had a report in the last export, and the account a moderator is looking
+          at is quite likely to be one that posted eleven things this afternoon. A new tab
+          because losing the queue and the search to a link is worse than a new tab. */}
+      <p class="account__posts">
+        <a data-posts-link target="_blank" rel="noopener">Everything this account has posted</a
+        > — opens in a new tab
+      </p>
+
+      <div class="reason">
+        <label class="reason__label" data-reason-label>Why, in a sentence</label>
+        <textarea class="reason__box" rows="2" data-reason maxlength="1000"></textarea>
+        <p class="reason__hint">
+          Required, and the account holder reads exactly this. Say what the account did, not
+          what you think of it.
+        </p>
+      </div>
+
+      <div class="actions">
+        <button class="button button--quiet" data-act="ban">Ban this account</button>
+        <button class="button" data-act="unban">Lift the ban</button>
+      </div>
+    </li>
+  </template>
+
+  <template data-template="erasure">
+    <li class="item item--compact">
+      <div class="item__head">
+        <h3 class="item__title" data-title></h3>
+        <p class="mono item__meta" data-meta></p>
+      </div>
+
+      <blockquote class="flag__detail" data-optional hidden>
+        <p data-note></p>
+      </blockquote>
+
+      <p class="erasure__counts">
+        Erasing detaches <span class="mono" data-counts></span>. Those stay in the corpus
+        without a name on them.
+      </p>
+
+      <div class="actions">
+        <button class="button" data-act="erase_account">Erase this account</button>
+      </div>
+    </li>
+  </template>
+</Base>
+
+<script>
+  import { longDate, verificationMonth } from '../../lib/format';
+  import { query, showStatus, hideStatus } from '../../lib/forms';
+  import { FLAG_REASONS, type FlagSubject } from '../../lib/comments';
+  import { startSession, subscribeToSession } from '../../lib/session';
+  import { OUTCOME } from '../../lib/status';
+  import { path } from '../../lib/paths';
+  import {
+    act,
+    fixturesActive,
+    loadQueues,
+    loadMoreFlags,
+    loadMoreHidden,
+    loadMoreErasures,
+    loadRole,
+    moderates,
+    searchAccounts,
+    NEEDS_REASON,
+    QUEUE_PAGE_SIZE,
+  } from '../../lib/moderation';
+  import { setModHint, clearModHint } from '../../lib/mod-hint';
+  import type {
+    Action,
+    QueueAccount,
+    QueueAuthor,
+    QueueComment,
+    QueueErasure,
+    QueueReport,
+    QueueClaim,
+    QueueFlag,
+    QueueEntry,
+    Role,
+    Target,
+  } from '../../lib/moderation';
+
+  /**
+   * Where a flagged thing lives, by subject type. Spelled out rather than built as
+   * `/${subjectType}s/`, which stopped being true when a claim's page moved to /opinions/.
+   * A comment has no page of its own and gets no link, as before.
+   */
+  const SUBJECT_ROUTE: Record<Exclude<FlagSubject, 'comment'>, string> = {
+    report: '/reports/',
+    claim: '/opinions/',
+  };
+
+  const notFound = query<HTMLElement>('[data-not-found]');
+  const screen = query<HTMLElement>('[data-moderate]');
+  const status = query<HTMLElement>('#queue-status');
+  const tally = query<HTMLElement>('[data-tally]');
+
+  let role: Role = 'member';
+  let opened = false;
+
+  // The gate. Nothing is revealed on 'loading', on 'signed-out', or on 'unavailable': every
+  // one of those answers is "show them the 404", and a screen that appeared for a moment
+  // while the session settled would be the one thing this page must not do.
+  if (fixturesActive()) {
+    // Development only. `fixturesActive()` compiles to `return false` in a production
+    // build, so this branch and everything it reaches are removed before deploy — check the
+    // bundle rather than believing it. See the note at the foot of src/lib/moderation.ts.
+    role = 'admin';
+    open();
+    query<HTMLElement>('[data-fixtures]').hidden = false;
+  } else {
+    subscribeToSession(async (state) => {
+      if (state.status === 'signed-out') {
+        clearModHint();
+        return;
+      }
+      if (state.status !== 'signed-in') return;
+      if (opened) return;
+
+      role = await loadRole(state.userId);
+      if (!moderates(role)) return;
+
+      setModHint();
+      open();
+    });
+
+    void startSession();
+  }
+
+  function open(): void {
+    opened = true;
+    notFound.hidden = true;
+    screen.hidden = false;
+    wireLoadMore();
+    wireAccountSearch();
+    void fill();
+  }
+
+  // ── Per-section offsets, reset by fill() and advanced by load-more handlers ────────
+
+  let flagsOffset = 0;
+  let flagsShown = 0;
+  let hiddenOffset = 0;
+  let hiddenReportsShown = 0;
+  let hiddenClaimsShown = 0;
+  let hiddenCommentsShown = 0;
+  let hiddenEntriesShown = 0;
+  let erasuresOffset = 0;
+  let erasuresShown = 0;
+
+  // ── Filling the queues ──────────────────────────────────────────────────────────────
+
+  async function fill(): Promise<void> {
+    flagsOffset = 0; flagsShown = 0;
+    hiddenOffset = 0;
+    hiddenReportsShown = 0; hiddenClaimsShown = 0;
+    hiddenCommentsShown = 0; hiddenEntriesShown = 0;
+    erasuresOffset = 0; erasuresShown = 0;
+
+    const result = await loadQueues(role);
+
+    if (!result.ok) {
+      showStatus(status, 'error', result.message);
+      return;
+    }
+
+    const q = result.value;
+
+    flagsShown = q.flags.length;
+    fillSection('flags', q.flags, flagItem, q.flagsHasMore);
+
+    hiddenReportsShown = q.hiddenReports.length;
+    hiddenClaimsShown = q.hiddenClaims.length;
+    hiddenCommentsShown = q.hiddenComments.length;
+    hiddenEntriesShown = q.hiddenEntries.length;
+    fillSubsection('hidden-reports', q.hiddenReports, (row) => hiddenItem({ kind: 'report', row }), q.hiddenReportsHasMore);
+    fillSubsection('hidden-claims', q.hiddenClaims, (row) => hiddenItem({ kind: 'claim', row }), q.hiddenClaimsHasMore);
+    fillSubsection('hidden-comments', q.hiddenComments, (row) => hiddenItem({ kind: 'comment', row }), q.hiddenCommentsHasMore);
+    fillSubsection('hidden-entries', q.hiddenEntries, (row) => hiddenItem({ kind: 'entry', row }), q.hiddenEntriesHasMore);
+    updateHiddenSection();
+
+    fillBanned(q.bannedAccounts);
+
+    const erasureSection = query<HTMLElement>('[data-section="erasures"]');
+    erasureSection.hidden = role !== 'admin';
+    if (role === 'admin') {
+      erasuresShown = q.erasures.length;
+      fillSection('erasures', q.erasures, erasureItem, q.erasuresHasMore);
+    }
+
+    updateTally();
+
+    // A search that is still on screen is re-run rather than left showing the state before
+    // the decision. It is not part of the queues, so nothing above would have touched it, and
+    // a row still offering "Ban this account" after the ban went through is the one thing this
+    // section must not do.
+    if (searchTerm) void runSearch(searchTerm);
+  }
+
+  function updateTally(): void {
+    const hiddenTotal = hiddenReportsShown + hiddenClaimsShown + hiddenCommentsShown + hiddenEntriesShown;
+    const hiddenHasMore =
+      !query<HTMLElement>('[data-subsection="hidden-reports"] [data-more]').hidden ||
+      !query<HTMLElement>('[data-subsection="hidden-claims"] [data-more]').hidden ||
+      !query<HTMLElement>('[data-subsection="hidden-comments"] [data-more]').hidden ||
+      !query<HTMLElement>('[data-subsection="hidden-entries"] [data-more]').hidden;
+
+    const flagsHasMore = !query<HTMLElement>('[data-section="flags"] [data-more]').hidden;
+    const flagLabel = `${flagsShown}${flagsHasMore ? '+' : ''} open ${flagsShown === 1 && !flagsHasMore ? 'flag' : 'flags'}`;
+    const hiddenLabel = `${hiddenTotal}${hiddenHasMore ? '+' : ''} hidden`;
+
+    tally.textContent = flagsShown === 0 && !flagsHasMore
+      ? `No open flags · ${hiddenLabel}`
+      : `${flagLabel} · ${hiddenLabel}`;
+  }
+
+  // Replace a section's list entirely (used by fill).
+  function fillSection<T>(
+    name: string,
+    rows: readonly T[],
+    build: (row: T) => HTMLElement,
+    hasMore: boolean,
+  ): void {
+    const root = query<HTMLElement>(`[data-section="${name}"]`);
+    const list = query<HTMLElement>('[data-list]', root);
+    const empty = query<HTMLElement>('[data-empty]', root);
+    const count = query<HTMLElement>('[data-count]', root);
+    const more = root.querySelector<HTMLElement>('[data-more]');
+
+    list.replaceChildren(...rows.map(build));
+    empty.hidden = rows.length > 0;
+    count.textContent = rows.length ? `${rows.length}${hasMore ? '+' : ''}` : '';
+    if (more) more.hidden = !hasMore;
+  }
+
+  // Replace a sub-section's list entirely (used by fill for hidden types).
+  function fillSubsection<T>(
+    name: string,
+    rows: readonly T[],
+    build: (row: T) => HTMLElement,
+    hasMore: boolean,
+  ): void {
+    const root = query<HTMLElement>(`[data-subsection="${name}"]`);
+    const list = query<HTMLElement>('[data-list]', root);
+    const more = query<HTMLElement>('[data-more]', root);
+
+    root.hidden = rows.length === 0;
+    list.replaceChildren(...rows.map(build));
+    more.hidden = !hasMore;
+  }
+
+  // Append to a section's list (used by load-more handlers).
+  function appendSection<T>(
+    name: string,
+    rows: readonly T[],
+    build: (row: T) => HTMLElement,
+    newTotal: number,
+    hasMore: boolean,
+  ): void {
+    const root = query<HTMLElement>(`[data-section="${name}"]`);
+    const list = query<HTMLElement>('[data-list]', root);
+    const count = query<HTMLElement>('[data-count]', root);
+    const more = root.querySelector<HTMLElement>('[data-more]');
+
+    list.append(...rows.map(build));
+    count.textContent = `${newTotal}${hasMore ? '+' : ''}`;
+    if (more) more.hidden = !hasMore;
+  }
+
+  // Append to a hidden sub-section's list (used by load-more handler for hidden).
+  function appendSubsection<T>(
+    name: string,
+    rows: readonly T[],
+    build: (row: T) => HTMLElement,
+    hasMore: boolean,
+  ): void {
+    if (!rows.length && !hasMore) return;
+    const root = query<HTMLElement>(`[data-subsection="${name}"]`);
+    const list = query<HTMLElement>('[data-list]', root);
+    const more = query<HTMLElement>('[data-more]', root);
+
+    root.hidden = false;
+    list.append(...rows.map(build));
+    more.hidden = !hasMore;
+  }
+
+  // Recompute the hidden section's heading count and empty state.
+  function updateHiddenSection(): void {
+    const hiddenSection = query<HTMLElement>('[data-section="hidden"]');
+    const count = query<HTMLElement>('[data-count]', hiddenSection);
+    const empty = query<HTMLElement>('[data-empty]', hiddenSection);
+
+    const total = hiddenReportsShown + hiddenClaimsShown + hiddenCommentsShown + hiddenEntriesShown;
+    const hasMore =
+      !query<HTMLElement>('[data-subsection="hidden-reports"] [data-more]').hidden ||
+      !query<HTMLElement>('[data-subsection="hidden-claims"] [data-more]').hidden ||
+      !query<HTMLElement>('[data-subsection="hidden-comments"] [data-more]').hidden ||
+      !query<HTMLElement>('[data-subsection="hidden-entries"] [data-more]').hidden;
+
+    count.textContent = total ? `${total}${hasMore ? '+' : ''}` : '';
+    empty.hidden = total > 0;
+  }
+
+  // ── Wiring load-more buttons ─────────────────────────────────────────────────────────
+
+  function wireLoadMore(): void {
+    for (const btn of screen.querySelectorAll<HTMLButtonElement>('[data-load-more]')) {
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        await handleLoadMore(btn.dataset.loadMore ?? '');
+        btn.disabled = false;
+      });
+    }
+  }
+
+  async function handleLoadMore(target: string): Promise<void> {
+    hideStatus(status);
+
+    if (target === 'flags') {
+      flagsOffset += QUEUE_PAGE_SIZE;
+      const result = await loadMoreFlags(flagsOffset);
+      if (!result.ok) { showStatus(status, 'error', result.message); flagsOffset -= QUEUE_PAGE_SIZE; return; }
+      flagsShown += result.value.flags.length;
+      appendSection('flags', result.value.flags, flagItem, flagsShown, result.value.flagsHasMore);
+
+    } else if (target === 'hidden-reports' || target === 'hidden-claims' || target === 'hidden-comments' || target === 'hidden-entries') {
+      hiddenOffset += QUEUE_PAGE_SIZE;
+      const result = await loadMoreHidden(hiddenOffset);
+      if (!result.ok) { showStatus(status, 'error', result.message); hiddenOffset -= QUEUE_PAGE_SIZE; return; }
+
+      const v = result.value;
+      hiddenReportsShown += v.hiddenReports.length;
+      hiddenClaimsShown += v.hiddenClaims.length;
+      hiddenCommentsShown += v.hiddenComments.length;
+      hiddenEntriesShown += v.hiddenEntries.length;
+      appendSubsection('hidden-reports', v.hiddenReports, (row) => hiddenItem({ kind: 'report', row }), v.hiddenReportsHasMore);
+      appendSubsection('hidden-claims', v.hiddenClaims, (row) => hiddenItem({ kind: 'claim', row }), v.hiddenClaimsHasMore);
+      appendSubsection('hidden-comments', v.hiddenComments, (row) => hiddenItem({ kind: 'comment', row }), v.hiddenCommentsHasMore);
+      appendSubsection('hidden-entries', v.hiddenEntries, (row) => hiddenItem({ kind: 'entry', row }), v.hiddenEntriesHasMore);
+      updateHiddenSection();
+
+    } else if (target === 'erasures') {
+      erasuresOffset += QUEUE_PAGE_SIZE;
+      const result = await loadMoreErasures(erasuresOffset);
+      if (!result.ok) { showStatus(status, 'error', result.message); erasuresOffset -= QUEUE_PAGE_SIZE; return; }
+      erasuresShown += result.value.erasures.length;
+      appendSection('erasures', result.value.erasures, erasureItem, erasuresShown, result.value.erasuresHasMore);
+    }
+
+    updateTally();
+  }
+
+  function clone(name: string): HTMLElement {
+    const template = query<HTMLTemplateElement>(`[data-template="${name}"]`);
+    const fragment = template.content.cloneNode(true) as DocumentFragment;
+    const element = fragment.firstElementChild;
+    if (!element) throw new Error(`Template ${name} is empty`);
+    return element as HTMLElement;
+  }
+
+  /**
+   * Put text into one hook, and hide the optional block around it when there is none.
+   *
+   * A queue item is mostly optional fields, and the alternative — an empty <dd> under a
+   * label saying "Caveats" — reads as though the author left it blank when in fact the
+   * question did not apply to them.
+   */
+  function put(root: HTMLElement, selector: string, text: string | null | undefined): void {
+    const element = root.querySelector<HTMLElement>(selector);
+    if (!element) return;
+
+    const value = (text ?? '').trim();
+    const optional = element.closest<HTMLElement>('[data-optional]');
+
+    if (!value) {
+      if (optional) optional.hidden = true;
+      else element.textContent = '';
+      return;
+    }
+
+    element.textContent = value;
+    if (optional) optional.hidden = false;
+  }
+
+  /** How somebody is named on this screen: their display name, marked as a pseudonym when
+   *  it is one, their institution when they have a badge, and whether the account is already
+   *  banned. Never an address — there is no column holding one and this is the screen where
+   *  somebody would think to add it.
+   *
+   *  The ban marker lives here rather than in the two rows that need it, so that every place a
+   *  person is named on this screen says it and there is no per-row rule to forget. It appears
+   *  on a flagger as well as on an author, which is deliberate: a flag raised by an account
+   *  since banned is worth reading differently. It appears **only** here — no page a reader
+   *  sees knows this, and `scripts/export.mjs` refuses the column so that none can. */
+  function name(author: QueueAuthor | null): string {
+    if (!author) return 'account erased';
+
+    const parts = [author.displayName];
+    if (author.isPseudonym) parts.push('(pseudonym)');
+    if (author.institution) {
+      parts.push(`· ${author.institution.name}, ${author.institution.country}`);
+    }
+    if (author.isBanned) parts.push('· account banned');
+
+    return parts.join(' ');
+  }
+
+  /** Whether a ban is a thing this row can offer. There has to be an account behind it, and it
+   *  must not be banned already — `public.moderate()` refuses a second ban by name, and a
+   *  button that always refuses is the same failure as a disabled one. */
+  function bannable(author: QueueAuthor | null | undefined): boolean {
+    return author ? !author.isBanned : false;
+  }
+
+  /**
+   * The whole of a flagged report, as a block to drop into the flag item.
+   *
+   * This is the part of the old "reports waiting" queue worth keeping. Nothing waits to be
+   * published any more, but the reason that queue showed the entire submission has not
+   * changed: a flag saying the verification section is not verification cannot be answered
+   * from a title, and a moderator who has to open another page to read it will decide
+   * without reading it.
+   */
+  function reportDetail(report: QueueReport): HTMLElement {
+    const item = clone('report-detail');
+
+    put(
+      item,
+      '[data-tools]',
+      report.tools
+        .map((tool) => `${tool.name} ${tool.version} (used ${tool.usedOn})`)
+        .join(' · '),
+    );
+
+    put(item, '[data-aim]', report.aim);
+    put(item, '[data-method]', report.method);
+    put(item, '[data-outcome]', OUTCOME[report.outcome].label);
+    put(item, '[data-outcome-notes]', report.outcomeNotes);
+    put(item, '[data-verification]', report.verification);
+    put(item, '[data-caveats]', report.caveats);
+    put(item, '[data-learned-notes]', report.learnedNotes);
+    put(item, '[data-transcript]', report.transcriptExcerpt);
+    put(item, '[data-transcript-url]', report.transcriptUrl);
+    query<HTMLElement>('[data-transcript-block]', item).hidden =
+      !report.transcriptExcerpt && !report.transcriptUrl;
+    put(item, '[data-tags]', report.tags.join(' · '));
+
+    // The structured metadata, spelled out. "Disclosed: no" on unpublished work would read
+    // as a failure to disclose, so the two are stated together or not at all.
+    const counting: string[] = [];
+    if (report.timeSpentMinutes !== null) counting.push(`${report.timeSpentMinutes} min`);
+    if (report.authorConfidence !== null) {
+      counting.push(`confidence ${report.authorConfidence}/10`);
+    }
+    if (report.wasPublished === 'yes') {
+      counting.push(
+        report.wasDisclosed === true
+          ? 'published, use disclosed'
+          : report.wasDisclosed === false
+            ? 'published, use not disclosed'
+            : 'published',
+      );
+    } else if (report.wasPublished === 'no') {
+      counting.push('not published');
+    }
+    counting.push(
+      report.thirdPartyMaterialConfirmed
+        ? 'third-party material confirmed removed'
+        : 'THIRD-PARTY MATERIAL NOT CONFIRMED',
+    );
+    put(item, '[data-counting]', counting.join(' · '));
+
+    return item;
+  }
+
+  function flagItem(flag: QueueFlag): HTMLElement {
+    const item = clone('flag');
+
+    const reason =
+      FLAG_REASONS.find((choice) => choice.value === flag.reason)?.label ?? flag.reason;
+
+    put(item, '[data-title]', reason);
+    put(
+      item,
+      '[data-meta]',
+      [
+        `on a ${flag.subjectType}`,
+        `flagged by ${name(flag.flagger)}`,
+        longDate(flag.createdAt),
+      ].join(' · '),
+    );
+    put(item, '[data-detail]', flag.detail);
+
+    const gone = query<HTMLElement>('[data-gone]', item);
+    gone.hidden = flag.subject !== null;
+
+    if (flag.subject) {
+      put(
+        item,
+        '[data-subject-meta]',
+        [`${flag.subject.kind} · ${flag.subject.status}`, name(flag.subject.author)].join(
+          ' · ',
+        ),
+      );
+      put(item, '[data-subject-title]', flag.subject.heading);
+      put(item, '[data-subject-body]', flag.subject.body);
+
+      if (flag.report) {
+        query<HTMLElement>('[data-subject-detail]', item).append(reportDetail(flag.report));
+      }
+
+      const link = item.querySelector<HTMLAnchorElement>('[data-subject-link]');
+      const optional = link?.closest<HTMLElement>('[data-optional]');
+
+      if (link && flag.subject.status === 'published' && flag.subjectType !== 'comment') {
+        link.href = path(`${SUBJECT_ROUTE[flag.subjectType]}${flag.subjectId}/`);
+        if (optional) optional.hidden = false;
+      }
+    }
+
+    // Whether the flagged thing is still on the site decides which of the two closing
+    // buttons is honest, so the other one is removed rather than left to be refused. A
+    // control that always fails teaches people to ignore the message beside it.
+    const visible = flag.subject !== null && flag.subject.status !== 'hidden';
+    for (const button of item.querySelectorAll<HTMLButtonElement>('[data-act]')) {
+      const named = button.dataset.act;
+      if (visible && named === 'resolve_flag') button.remove();
+      if (!visible && named === 'hide') button.remove();
+    }
+
+    wire(item, (action) => {
+      if (action === 'ban') {
+        return flag.subject?.author
+          ? { target: 'account' as Target, id: flag.subject.author.id, action: 'ban' as Action }
+          : null;
+      }
+
+      // The only `hide` a flag offers is a hide of what it named. There is no such thing as
+      // hiding a flag itself, which is why this reads as a redirection rather than as a
+      // special case — and hiding closes this flag and every other one against the same
+      // post, in the same transaction, which is why there is no second button to press
+      // afterwards.
+      if (action === 'hide') {
+        return { target: flag.subjectType as Target, id: flag.subjectId, action };
+      }
+
+      return { target: 'flag' as Target, id: flag.id, action };
+    }, bannable(flag.subject?.author));
+
+    return item;
+  }
+
+  type Hidden =
+    | { kind: 'report'; row: QueueReport }
+    | { kind: 'claim'; row: QueueClaim }
+    | { kind: 'comment'; row: QueueComment }
+    | { kind: 'entry'; row: QueueEntry };
+
+  function hiddenItem(entry: Hidden): HTMLElement {
+    const item = clone('hidden');
+    const author = entry.row.author;
+
+    put(
+      item,
+      '[data-title]',
+      entry.kind === 'report'
+        ? entry.row.title
+        : entry.kind === 'claim'
+          ? entry.row.statement
+          : entry.kind === 'entry'
+            ? entry.row.title
+            : 'Comment',
+    );
+
+    put(
+      item,
+      '[data-meta]',
+      [entry.kind, name(author), verificationMonth(entry.row.createdAt)].join(' · '),
+    );
+
+    put(
+      item,
+      '[data-body]',
+      entry.kind === 'report'
+        ? entry.row.aim
+        : entry.kind === 'claim'
+          ? (entry.row.rationale ?? '')
+          : entry.kind === 'entry'
+            ? entry.row.description
+            : entry.row.body,
+    );
+
+    // A report or an entry can be edited by its author while it is hidden, and a revision is
+    // the only thing that makes a hidden row worth a second look. Nothing announces it — the
+    // author has no way to send you a message — so the changed date is the whole signal.
+    const revised =
+      (entry.kind === 'report' || entry.kind === 'entry') &&
+      entry.row.updatedAt > entry.row.createdAt;
+
+    if (revised) {
+      put(item, '[data-note]', 'The text above is their revision. Nothing else has changed.');
+      put(item, '[data-note-at]', longDate(entry.row.updatedAt));
+    }
+
+    // Banning from here rather than only from a flag, because this is the list a moderator is
+    // looking at when the pattern becomes visible: eleven hidden entries with one name on
+    // them is the evidence, and it is not any single flag's answer.
+    wire(
+      item,
+      (action) => {
+        if (action === 'ban') {
+          return author ? { target: 'account' as Target, id: author.id, action } : null;
+        }
+
+        return { target: entry.kind as Target, id: entry.row.id, action };
+      },
+      bannable(author),
+    );
+
+    return item;
+  }
+
+  function erasureItem(request: QueueErasure): HTMLElement {
+    const item = clone('erasure');
+
+    put(item, '[data-title]', name(request.member));
+    put(item, '[data-meta]', `asked ${longDate(request.requestedAt)}`);
+    put(item, '[data-note]', request.note);
+    put(
+      item,
+      '[data-counts]',
+      `${request.reportCount} reports · ${request.commentCount} comments`,
+    );
+
+    wire(item, () => ({
+      target: 'account' as Target,
+      id: request.id,
+      action: 'erase_account' as Action,
+    }));
+
+    return item;
+  }
+
+  // ── Accounts ────────────────────────────────────────────────────────────────────────
+  //
+  // Two lists over one template: whoever the search found, and whoever is banned now. The
+  // same row does both jobs because the decision is symmetrical — one button appears and the
+  // other is removed, according to the state the row is in.
+
+  /** The live search term, so that fill() can re-run it after a decision. Empty when no
+   *  search is on screen. */
+  let searchTerm = '';
+
+  function wireAccountSearch(): void {
+    const form = query<HTMLFormElement>('[data-account-search]');
+    const box = query<HTMLInputElement>('#account-term', form);
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      hideStatus(status);
+
+      searchTerm = box.value.trim();
+
+      if (!searchTerm) {
+        query<HTMLElement>('[data-subsection="found"]').hidden = true;
+        query<HTMLElement>('[data-no-match]').hidden = true;
+        return;
+      }
+
+      await runSearch(searchTerm);
+    });
+  }
+
+  async function runSearch(term: string): Promise<void> {
+    const result = await searchAccounts(term);
+
+    if (!result.ok) {
+      showStatus(status, 'error', result.message);
+      return;
+    }
+
+    const found = query<HTMLElement>('[data-subsection="found"]');
+    const list = query<HTMLElement>('[data-list]', found);
+    const count = query<HTMLElement>('[data-count]', found);
+
+    list.replaceChildren(...result.value.map(accountItem));
+    count.textContent = result.value.length ? String(result.value.length) : '';
+    found.hidden = result.value.length === 0;
+    query<HTMLElement>('[data-no-match]').hidden = result.value.length > 0;
+  }
+
+  function fillBanned(accounts: readonly QueueAccount[]): void {
+    const section = query<HTMLElement>('[data-subsection="banned"]');
+    const list = query<HTMLElement>('[data-list]', section);
+    const count = query<HTMLElement>('[data-count]', section);
+
+    list.replaceChildren(...accounts.map(accountItem));
+    count.textContent = accounts.length ? String(accounts.length) : '';
+    section.hidden = accounts.length === 0;
+    query<HTMLElement>('[data-none-banned]').hidden = accounts.length > 0;
+  }
+
+  function accountItem(account: QueueAccount): HTMLElement {
+    const item = clone('account');
+
+    // name() takes the author shape, which an account is a wider version of. Same rule
+    // applies: a display name, a pseudonym marker, a badge, and never an address.
+    put(item, '[data-title]', name(account));
+
+    const meta = [account.role, `joined ${verificationMonth(account.joinedAt)}`];
+
+    // Only the date, because name() above has already said that the account is banned. The date
+    // comes from the audit log, and an account banned by direct database access has no row
+    // there — then the title carries the state and this line says nothing, which is the honest
+    // rendering of a log that is silent.
+    if (account.isBanned && account.bannedAt) {
+      meta.push(`banned ${longDate(account.bannedAt)}`);
+    }
+
+    put(item, '[data-meta]', meta.join(' · '));
+
+    const posts = query<HTMLAnchorElement>('[data-posts-link]', item);
+    posts.href = path(`/authors/view/?id=${account.id}`);
+
+    // An account that moderates cannot be banned from here, so the row states the rule and
+    // carries no controls at all — not a disabled button, and not a reason box for a decision
+    // that has nowhere to go.
+    const standing = account.role !== 'member';
+    query<HTMLElement>('[data-standing]', item).hidden = !standing;
+
+    if (standing) {
+      item.querySelector('.reason')?.remove();
+      item.querySelector('.actions')?.remove();
+      return item;
+    }
+
+    for (const button of item.querySelectorAll<HTMLButtonElement>('[data-act]')) {
+      const named = button.dataset.act;
+      if (account.isBanned && named === 'ban') button.remove();
+      if (!account.isBanned && named === 'unban') button.remove();
+    }
+
+    wire(item, (action) => ({ target: 'account' as Target, id: account.id, action }));
+
+    return item;
+  }
+
+  // ── Acting ──────────────────────────────────────────────────────────────────────────
+
+  interface Call {
+    target: Target;
+    id: string;
+    action: Action;
+  }
+
+  /**
+   * Attach every button in one item to one call, and take the reason from the box beside
+   * them.
+   *
+   * `:scope >` is not needed here — a queue item contains no nested items — but the reason
+   * box is found within the item rather than by id for the same underlying reason: there are
+   * as many boxes on this page as there are things waiting, and a document-wide lookup would
+   * quietly send the first one's text with every decision.
+   */
+  function wire(
+    item: HTMLElement,
+    resolve: (action: Action) => Call | null,
+    canBan = true,
+  ): void {
+    const reasonBox = item.querySelector<HTMLTextAreaElement>('[data-reason]');
+
+    for (const button of item.querySelectorAll<HTMLButtonElement>('[data-act]')) {
+      // The one place a data attribute becomes a typed value. Every `data-act` in this file
+      // is written a few hundred lines above; a wrong one produces a refusal from
+      // public.moderate() rather than an action nobody meant.
+      const named = (button.dataset.act ?? '') as Action;
+
+      // A control for something that cannot happen is removed rather than disabled: there is
+      // no account behind the contribution because its author erased theirs, or the account is
+      // banned already and public.moderate() refuses a second one by name. A disabled button
+      // invites a second click and explains nothing, and a button that always refuses is the
+      // same failure wearing a better error message. Where the account is already banned the
+      // row says so beside the name, so the absence is explained rather than merely quiet.
+      if (named === 'ban' && !canBan) {
+        button.remove();
+        continue;
+      }
+
+      button.addEventListener('click', async () => {
+        const call = resolve(named);
+        if (!call) return;
+
+        const reason = reasonBox?.value ?? '';
+
+        if (NEEDS_REASON.includes(call.action) && !reason.trim()) {
+          showStatus(
+            status,
+            'error',
+            'That decision needs an explanation. Whoever wrote the post and whoever flagged it will read it.',
+          );
+          reasonBox?.focus();
+          return;
+        }
+
+        if (call.action === 'ban' || call.action === 'erase_account') {
+          const question =
+            call.action === 'ban'
+              ? 'Ban this account? They will not be able to post, comment, rate or flag until it is lifted.'
+              : 'Erase this account? The account and its profile go, its contributions stay without a name on them, and this cannot be undone.';
+
+          if (!window.confirm(question)) return;
+        }
+
+        hideStatus(status);
+        for (const other of item.querySelectorAll('button')) other.disabled = true;
+
+        const result = await act(call.target, call.id, call.action, reason);
+
+        if (!result.ok) {
+          for (const other of item.querySelectorAll('button')) other.disabled = false;
+          showStatus(status, 'error', result.message);
+          return;
+        }
+
+        showStatus(status, 'success', `Done, and recorded. ${DONE[call.action]}`);
+
+        // Reloaded rather than patched. Half the actions here move a row between queues —
+        // hiding what a flag named changes both the flag and the hidden list — and a
+        // screen that guessed at the new state would eventually guess wrong in front of
+        // somebody making a decision from it.
+        void fill();
+      });
+    }
+  }
+
+  const DONE: Record<Action, string> = {
+    hide: 'It leaves every page within a few minutes, its author has your explanation, and every open flag against it is closed.',
+    unhide: 'It is back on every page within a few minutes, and its author has been told.',
+    resolve_flag: 'The flag is closed and whoever raised it has your explanation.',
+    dismiss_flag: 'It stays up. Whoever flagged it and whoever wrote it both have your explanation.',
+    ban: 'The account cannot post until this is lifted.',
+    unban: 'The account can post again.',
+    erase_account: 'The account is gone. Its contributions stay, and lose its name within a few minutes.',
+  };
+</script>
+
+<style>
+  .page {
+    padding-block: var(--space-2xl);
+  }
+
+  .queue {
+    padding-block: var(--space-2xl) var(--space-xl);
+  }
+
+  .queue__header {
+    padding-block-end: var(--space-md);
+    border-block-end: var(--border);
+  }
+
+  .queue__lead {
+    max-width: var(--measure);
+    margin-block-start: var(--space-sm);
+    color: var(--ink-muted);
+    line-height: var(--leading-relaxed);
+    text-wrap: pretty;
+  }
+
+  .queue__tally {
+    margin-block-start: var(--space-sm);
+    font-size: var(--size-1);
+    letter-spacing: var(--tracking-wide);
+    color: var(--ink-muted);
+  }
+
+  .queue__section {
+    margin-block-start: var(--space-2xl);
+  }
+
+  .queue__section h2 {
+    padding-block-end: var(--space-2xs);
+    border-block-end: var(--border);
+  }
+
+  .queue__section h2 .mono {
+    font-size: var(--size-2);
+    color: var(--ink-muted);
+  }
+
+  .queue__note,
+  .queue__empty {
+    max-width: var(--measure);
+    margin-block-start: var(--space-sm);
+    font-size: var(--size-2);
+    color: var(--ink-muted);
+  }
+
+  .queue__subhead {
+    margin-block-start: var(--space-xl);
+    padding-block-end: var(--space-2xs);
+    border-block-end: var(--border);
+    font-size: var(--size-3);
+    font-weight: var(--weight-semibold);
+    color: var(--ink-muted);
+  }
+
+  .queue__more {
+    margin-block-start: var(--space-md);
+  }
+
+  .queue__list {
+    margin-block-start: var(--space-lg);
+    padding: 0;
+    list-style: none;
+  }
+
+  .panel {
+    margin-block-start: var(--space-lg);
+  }
+
+  /* ── One thing to decide ─────────────────────────────────────────────────────────── */
+  .item {
+    padding: var(--space-lg);
+    border: var(--border);
+    background-color: var(--surface);
+  }
+
+  .item + .item {
+    margin-block-start: var(--space-lg);
+  }
+
+  .item--compact {
+    padding: var(--space-md);
+  }
+
+  .item__head {
+    padding-block-end: var(--space-sm);
+    border-block-end: var(--border);
+  }
+
+  .item__title {
+    font-size: var(--size-4);
+  }
+
+  .item__statement {
+    font-family: var(--font-serif);
+    font-size: var(--size-4);
+    line-height: var(--leading-tight);
+  }
+
+  .item__meta {
+    margin-block-start: var(--space-3xs);
+    font-size: var(--size-1);
+    color: var(--ink-muted);
+  }
+
+  .item__note {
+    margin-block-start: var(--space-md);
+    padding: var(--space-sm) var(--space-md);
+    border-inline-start: var(--border-width-thick) solid var(--accent);
+    background-color: var(--ground);
+  }
+
+  .item__note-head {
+    font-size: var(--size-1);
+    font-weight: var(--weight-semibold);
+  }
+
+  /* ── The submission itself ───────────────────────────────────────────────────────── */
+  .fields {
+    margin-block: var(--space-md) 0;
+  }
+
+  .fields dt {
+    margin-block-start: var(--space-md);
+    font-size: var(--size-1);
+    font-family: var(--font-mono);
+    letter-spacing: var(--tracking-wide);
+    text-transform: lowercase;
+    color: var(--ink-muted);
+  }
+
+  .fields dd {
+    margin-block-start: var(--space-3xs);
+    margin-inline-start: 0;
+    max-width: var(--measure);
+  }
+
+  .pre {
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+  }
+
+  .transcript {
+    margin-block-start: var(--space-2xs);
+  }
+
+  .transcript summary {
+    font-size: var(--size-2);
+    cursor: pointer;
+  }
+
+  .transcript pre {
+    margin-block-start: var(--space-sm);
+    padding: var(--space-sm);
+    max-height: 24rem;
+    overflow: auto;
+    border: var(--border);
+    background-color: var(--ground);
+    font-family: var(--font-mono);
+    font-size: var(--size-1);
+    line-height: var(--leading-relaxed);
+  }
+
+  /* ── A flag and what it named ────────────────────────────────────────────────────── */
+  .flag__detail {
+    margin: var(--space-md) 0 0;
+    padding-inline-start: var(--space-md);
+    border-inline-start: var(--border);
+    color: var(--ink-muted);
+  }
+
+  .flag__subject {
+    margin-block-start: var(--space-md);
+    padding: var(--space-md);
+    border: var(--border);
+    background-color: var(--ground);
+  }
+
+  .flag__subject-head {
+    font-size: var(--size-1);
+    color: var(--ink-muted);
+  }
+
+  .flag__subject-title {
+    margin-block-start: var(--space-3xs);
+    font-weight: var(--weight-semibold);
+  }
+
+  .flag__subject p + p {
+    margin-block-start: var(--space-2xs);
+  }
+
+  .erasure__counts {
+    margin-block-start: var(--space-md);
+  }
+
+  /* ── An account ──────────────────────────────────────────────────────────────────── */
+  .search {
+    margin-block-start: var(--space-lg);
+  }
+
+  .search__row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2xs) var(--space-xs);
+    margin-block-start: var(--space-2xs);
+  }
+
+  .search__box {
+    flex: 1 1 18rem;
+    max-inline-size: var(--measure);
+    padding: var(--space-2xs) var(--space-xs);
+    border: var(--border);
+    border-radius: var(--radius-sm);
+    background-color: var(--ground);
+    color: var(--ink);
+    font: inherit;
+    font-size: var(--size-2);
+  }
+
+  .search__box:focus-visible {
+    outline: var(--border-width-thick) solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  .account__standing,
+  .account__posts {
+    margin-block-start: var(--space-sm);
+    font-size: var(--size-2);
+    color: var(--ink-muted);
+  }
+
+  .flag__gone {
+    margin-block-start: var(--space-md);
+    font-size: var(--size-2);
+    color: var(--outcome-partial);
+  }
+
+  /* ── Deciding ────────────────────────────────────────────────────────────────────── */
+  .reason {
+    margin-block-start: var(--space-lg);
+  }
+
+  .reason__label {
+    display: block;
+    font-size: var(--size-2);
+    font-weight: var(--weight-semibold);
+  }
+
+  .reason__box {
+    display: block;
+    inline-size: 100%;
+    max-inline-size: var(--measure);
+    margin-block-start: var(--space-2xs);
+    padding: var(--space-2xs) var(--space-xs);
+    border: var(--border);
+    border-radius: var(--radius-sm);
+    background-color: var(--ground);
+    color: var(--ink);
+    font: inherit;
+    font-size: var(--size-2);
+  }
+
+  .reason__box:focus-visible {
+    outline: var(--border-width-thick) solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  .reason__hint {
+    max-width: var(--measure);
+    margin-block-start: var(--space-3xs);
+    font-size: var(--size-1);
+    color: var(--ink-muted);
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2xs) var(--space-xs);
+    margin-block-start: var(--space-md);
+  }
+</style>

@@ -1,0 +1,111 @@
+name: link-check
+
+# Monthly check of all published entry URLs.
+#
+# Runs on the first of each month. A moderator can also trigger it from the Actions tab
+# using workflow_dispatch.
+#
+# On failure (at least one unreachable link), the workflow opens a GitHub issue listing
+# the broken URLs. If an open issue with the label "link-check" already exists, it is
+# closed first so only one is ever open at a time — no accumulation of stale reports.
+
+on:
+  schedule:
+    - cron: '0 6 1 * *'   # 06:00 UTC on the 1st of each month
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write    # to open and close issues
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run link checker
+        id: check
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          # Capture summary JSON. Script exits 0 (all ok) or 1 (broken links).
+          # Exit 2 means a script error (database unreachable, etc.).
+          node scripts/link-check.mjs > summary.json || true
+          EXIT=$?
+
+          echo "exit_code=$EXIT" >> "$GITHUB_OUTPUT"
+
+          # Make the summary available to subsequent steps.
+          echo "summary<<EOF" >> "$GITHUB_OUTPUT"
+          cat summary.json >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Close any existing link-check issue
+        if: steps.check.outputs.exit_code == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Find open issues labelled "link-check" and close them so there is never
+          # more than one. Not failing if there are none.
+          gh issue list --label link-check --state open --json number --jq '.[].number' |
+            xargs -I{} gh issue close {} --comment "Superseded by a newer link-check run." \
+            || true
+
+      - name: Open issue for broken links
+        if: steps.check.outputs.exit_code == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUMMARY: ${{ steps.check.outputs.summary }}
+        run: |
+          CHECKED=$(echo "$SUMMARY"    | node -e "process.stdin.resume();let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).checked))")
+          BROKEN=$(echo "$SUMMARY"     | node -e "process.stdin.resume();let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).unreachable))")
+          NEWLY=$(echo "$SUMMARY"      | node -e "process.stdin.resume();let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).newlyUnreachable))")
+          CHECKED_AT=$(echo "$SUMMARY" | node -e "process.stdin.resume();let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).checkedAt))")
+          URLS=$(echo "$SUMMARY"       | node -e "
+            process.stdin.resume();
+            let d='';
+            process.stdin.on('data',c=>d+=c);
+            process.stdin.on('end',()=>{
+              const s=JSON.parse(d);
+              console.log(s.brokenUrls.map(r=>'- '+r.url+(r.wasNew?' *(newly broken)*':'')).join('\n'));
+            })")
+
+          gh issue create \
+            --title "Monthly link check: $BROKEN unreachable $([[ $BROKEN -eq 1 ]] && echo 'entry' || echo 'entries') ($CHECKED_AT)" \
+            --label link-check \
+            --body "$(cat <<BODY
+          ## Unreachable entries
+
+          The monthly link check found **${BROKEN}** unreachable URL${BROKEN:-1} (${NEWLY} newly broken) out of ${CHECKED} checked on ${CHECKED_AT}.
+
+          ### Broken URLs
+
+          ${URLS}
+
+          ### What to do
+
+          For each broken URL:
+          1. Open the entry in the [moderation queue](/moderate/) and verify the link.
+          2. If the content has moved, consider whether the submitter should update it (send back with a note) or whether it should be hidden.
+          3. If the site is temporarily down, wait for next month's check.
+          4. Close this issue when all broken links have been reviewed.
+
+          ---
+          *Opened automatically by the [link-check workflow](https://github.com/${{ github.repository }}/actions/workflows/link-check.yml).*
+          BODY
+          )"
+
+      - name: Fail the workflow if the script errored
+        if: steps.check.outputs.exit_code == '2'
+        run: |
+          echo "Link checker exited with code 2 — database or script error."
+          exit 1

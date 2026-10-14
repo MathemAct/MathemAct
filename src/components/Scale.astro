@@ -1,0 +1,164 @@
+---
+/**
+ * One 0-to-10 answer, as eleven discrete radios with nothing selected.
+ *
+ * The whole site uses one scale — the agreement scale on a claim, the confidence question
+ * on a report, and the five in "So this can be counted" — so it uses one legend, and this is
+ * it. Four rules, each of which changes what the numbers mean:
+ *
+ *   **Nothing is selected on load.** An unanswered group submits null, and that is what makes
+ *   every scale on the form skippable without a "rather not say" control beside each one.
+ *   Offering both is redundant and makes the blank state ambiguous — which is why the old
+ *   ConfidenceScale's decline radio is gone.
+ *
+ *   **Radios, never `input type=range`.** A slider forces a starting value, and a starting
+ *   value anchors the answer; it has no keyboard-obvious granularity; it is poor on touch;
+ *   and it reads to a screen reader as a bare number with no anchors.
+ *
+ *   **Only the two ends are labelled**, under the row. Mid-point labels get argued with, and
+ *   the argument is never about the tool.
+ *
+ *   **The anchors are in the accessible name of the end points**, so somebody arrowing
+ *   through hears "0, no help at all" rather than "0" and then, eventually, a caption.
+ *
+ * A conditional scale is wrapped by the page in an element it can hide; this component knows
+ * nothing about that. Hidden means null, never 0: a 0 would put "no help at all" into the
+ * corpus for a question the author was never shown.
+ */
+import { CONFIDENCE } from '../lib/report-schema';
+
+interface Props {
+  /** The column, and the radio group's name. */
+  name: string;
+  /** The question. Rendered as the group's legend, so it is the accessible name. */
+  prompt: string;
+  low: string;
+  high: string;
+  /** One line under the prompt, where the question needs framing the anchors cannot give. */
+  hint?: string;
+}
+
+const { name, prompt, low, high, hint } = Astro.props;
+
+const points = Array.from(
+  { length: CONFIDENCE.max - CONFIDENCE.min + 1 },
+  (_, i) => CONFIDENCE.min + i,
+);
+
+/** "0, no help at all" at the ends, the bare number in between. */
+function describe(point: number): string {
+  if (point === CONFIDENCE.min) return `${point}, ${low}`;
+  if (point === CONFIDENCE.max) return `${point}, ${high}`;
+  return String(point);
+}
+---
+
+<fieldset class="scale">
+  <legend class="scale__prompt">{prompt}</legend>
+
+  {hint && <p class="scale__hint">{hint}</p>}
+
+  <div class="scale__points">
+    {
+      points.map((point) => (
+        <label class="scale__point" for={`${name}-${point}`}>
+          <input
+            class="scale__input"
+            type="radio"
+            id={`${name}-${point}`}
+            name={name}
+            value={String(point)}
+            aria-label={describe(point)}
+          />
+          <span class="scale__number">{point}</span>
+        </label>
+      ))
+    }
+  </div>
+
+  {/* Under the row, and aria-hidden: the words are already in each end point's accessible
+      name, and reading them twice is noise for the one person who needs them most. */}
+  <div class="scale__anchors" aria-hidden="true">
+    <span>{CONFIDENCE.min} — {low}</span>
+    <span class="scale__anchor--end">{CONFIDENCE.max} — {high}</span>
+  </div>
+</fieldset>
+
+<style>
+  .scale {
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .scale__prompt {
+    padding: 0;
+    font-size: var(--size-2);
+    font-weight: var(--weight-semibold);
+  }
+
+  .scale__hint {
+    margin-block: var(--space-3xs) var(--space-2xs);
+    color: var(--ink-muted);
+    font-size: var(--size-2);
+  }
+
+  .scale__points {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3xs);
+    margin-block-start: var(--space-2xs);
+  }
+
+  .scale__point {
+    flex: 1 1 2.25rem;
+    cursor: pointer;
+  }
+
+  .scale__input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  /* A score is a number a machine parses, so it is mono, like every other one here. */
+  .scale__number {
+    display: block;
+    padding-block: var(--space-2xs);
+    border: var(--border);
+    border-radius: var(--radius-sm);
+    background-color: var(--surface);
+    font-family: var(--font-mono);
+    font-size: var(--size-2);
+    text-align: center;
+  }
+
+  .scale__point:has(.scale__input:checked) .scale__number {
+    border-width: var(--border-width-thick);
+    border-color: var(--ink);
+    background-color: var(--accent-wash);
+    padding-block: calc(var(--space-2xs) - 1px);
+    font-weight: var(--weight-semibold);
+  }
+
+  .scale__point:has(.scale__input:focus-visible) .scale__number {
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-offset);
+  }
+
+  .scale__anchors {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-sm);
+    margin-block-start: var(--space-3xs);
+    color: var(--ink-muted);
+    font-size: var(--size-2);
+  }
+
+  .scale__anchor--end {
+    text-align: right;
+  }
+</style>

@@ -1,0 +1,444 @@
+---
+/**
+ * Full-text search over the report and claim corpus.
+ *
+ * Pagefind indexes the generated HTML at build time. This page uses the Pagefind JS API
+ * directly (not the default UI) so that results can be grouped by content type and the
+ * existing filter vocabulary — area, task type — can be mapped to Pagefind's filter system.
+ *
+ * The pagefind bundle is at [base]/pagefind/pagefind.js, generated after `astro build` by
+ * `pagefind --site dist`. In development mode (npm run dev), the index does not exist and
+ * the page shows a graceful fallback rather than an error.
+ *
+ * Nothing about search is on the critical path. The pagefind JS is imported lazily inside
+ * the script, after the page renders, so search never blocks initial paint.
+ */
+import Base from '../layouts/Base.astro';
+import { path } from '../lib/paths';
+import { AREAS, TASK_TYPES } from '../lib/report-schema';
+
+const q = Astro.url.searchParams.get('q') ?? '';
+// `debate` is what this filter was called until 2026-10-12. Read as `claim` so that a
+// bookmarked search still filters rather than matching nothing.
+const rawType = Astro.url.searchParams.get('type') ?? '';
+const filterType = rawType === 'debate' ? 'claim' : rawType;
+const filterArea = Astro.url.searchParams.get('area') ?? '';
+const filterTask = Astro.url.searchParams.get('task') ?? '';
+---
+
+<Base
+  title="Search"
+  description="Search reports and opinions in the MathemAct corpus."
+>
+  <div class="shell search-page" data-base={import.meta.env.BASE_URL}>
+    <header class="search-header">
+      <h1>Search</h1>
+    </header>
+
+    <form class="search-form" role="search" method="get" action={path('/search/')}>
+      <div class="search-input-row">
+        <input
+          class="search-input"
+          type="search"
+          name="q"
+          value={q}
+          placeholder="Search reports and opinions…"
+          aria-label="Search query"
+          autofocus
+        />
+        <button class="button button--primary" type="submit">Search</button>
+      </div>
+
+      <fieldset class="search-filters">
+        <legend class="visually-hidden">Filters</legend>
+
+        <div class="filter-group">
+          <span class="filter-group__label">Type</span>
+          {(['', 'report', 'claim'] as const).map((t) => (
+            <label class="filter-chip">
+              <input
+                type="radio"
+                name="type"
+                value={t}
+                checked={filterType === t}
+              />
+              <span>{t === '' ? 'All' : t === 'report' ? 'Reports' : 'Opinions'}</span>
+            </label>
+          ))}
+        </div>
+
+        {(filterType === '' || filterType === 'report') && (
+          <>
+            <div class="filter-group">
+              <span class="filter-group__label">Area</span>
+              <label class="filter-chip">
+                <input type="radio" name="area" value="" checked={filterArea === ''} />
+                <span>Any</span>
+              </label>
+              {AREAS.map((a) => (
+                <label class="filter-chip">
+                  <input type="radio" name="area" value={a.value} checked={filterArea === a.value} />
+                  <span>{a.label}</span>
+                </label>
+              ))}
+            </div>
+
+            <div class="filter-group">
+              <span class="filter-group__label">Task</span>
+              <label class="filter-chip">
+                <input type="radio" name="task" value="" checked={filterTask === ''} />
+                <span>Any</span>
+              </label>
+              {TASK_TYPES.map((t) => (
+                <label class="filter-chip">
+                  <input type="radio" name="task" value={t.value} checked={filterTask === t.value} />
+                  <span>{t.label}</span>
+                </label>
+              ))}
+            </div>
+          </>
+        )}
+      </fieldset>
+    </form>
+
+    <p class="search-people-hint">
+      Looking for a contributor? <a href={path('/network/people/')}>Browse people</a>
+    </p>
+
+    <div class="search-status" data-search-status role="status" aria-live="polite">
+      {q ? 'Searching…' : 'Enter a search term above.'}
+    </div>
+
+    <div class="search-results" data-results>
+      <section class="results-group" data-group="report" hidden>
+        <h2 class="results-group__heading">Reports</h2>
+        <ul class="results-list" role="list" data-list="report"></ul>
+      </section>
+
+      <section class="results-group" data-group="claim" hidden>
+        <h2 class="results-group__heading">Opinions</h2>
+        <ul class="results-list" role="list" data-list="claim"></ul>
+      </section>
+
+      <section class="results-group" data-group="other" hidden>
+        <h2 class="results-group__heading">Other pages</h2>
+        <ul class="results-list" role="list" data-list="other"></ul>
+      </section>
+    </div>
+
+    {/* Rendered once, cloned per result */}
+    <template data-result-tpl>
+      <li class="result-item">
+        <a class="result-item__title" data-title href=""></a>
+        <p class="result-item__excerpt" data-excerpt></p>
+        <p class="result-item__meta" data-meta></p>
+      </li>
+    </template>
+  </div>
+</Base>
+
+<script>
+  /**
+   * Pagefind search.
+   *
+   * Pagefind's JS bundle lives at [base]/pagefind/pagefind.js, generated at build time.
+   * It is imported with @vite-ignore because it does not exist during the Astro/Vite build
+   * and must be resolved at runtime from the deployed site. In development (npm run dev)
+   * the file is absent and the page shows an appropriate message.
+   *
+   * Results are grouped by the `type` filter value written into each report and
+   * claim page with data-pagefind-filter="type:report" etc.
+   */
+
+  const page = document.querySelector<HTMLElement>('[data-base]');
+  const status = document.querySelector<HTMLElement>('[data-search-status]')!;
+  const template = document.querySelector<HTMLTemplateElement>('[data-result-tpl]')!;
+
+  const base = page?.dataset.base ?? '/';
+  const params = new URLSearchParams(window.location.search);
+  const q = params.get('q') ?? '';
+  // `debate` is the old name of the claim filter; see the same alias in the frontmatter.
+  const rawType = params.get('type') ?? '';
+  const filterType = rawType === 'debate' ? 'claim' : rawType;
+  const filterArea = params.get('area') ?? '';
+  const filterTask = params.get('task') ?? '';
+
+  if (!q) {
+    status.textContent = 'Enter a search term above.';
+  } else {
+    void run();
+  }
+
+  // Auto-submit when a filter radio changes so the URL updates.
+  for (const input of document.querySelectorAll<HTMLInputElement>(
+    '.search-filters input[type="radio"]',
+  )) {
+    input.addEventListener('change', () => {
+      (input.closest('form') as HTMLFormElement)?.requestSubmit();
+    });
+  }
+
+  async function run(): Promise<void> {
+    let pagefind: {
+      init(): Promise<void>;
+      search(
+        query: string,
+        opts?: { filters?: Record<string, string> },
+      ): Promise<{ results: Array<{ data(): Promise<PagefindResult> }> }>;
+    };
+
+    try {
+      pagefind = await import(/* @vite-ignore */ `${base}pagefind/pagefind.js`);
+      await pagefind.init();
+    } catch {
+      status.textContent =
+        'Search index not found. Build the site first with npm run build.';
+      return;
+    }
+
+    const filters: Record<string, string> = {};
+    if (filterType) filters.type = filterType;
+    if (filterArea) filters.area = areaLabel(filterArea);
+    if (filterTask) filters.task_type = taskTypeLabel(filterTask);
+
+    const search = await pagefind.search(q, filters.type || filters.area || filters.task_type ? { filters } : undefined);
+
+    const MAX = 40;
+    const raw = await Promise.all(search.results.slice(0, MAX).map((r) => r.data()));
+
+    if (raw.length === 0) {
+      status.textContent = `No results for "${q}".`;
+      return;
+    }
+
+    status.textContent = `${raw.length}${raw.length === MAX ? '+' : ''} result${raw.length === 1 ? '' : 's'} for "${q}"`;
+
+    const groups: Record<'report' | 'claim' | 'other', PagefindResult[]> = {
+      report: [],
+      claim: [],
+      other: [],
+    };
+    for (const r of raw) {
+      const t = (r.meta?.type ?? '') as string;
+      if (t === 'report') groups.report.push(r);
+      else if (t === 'claim') groups.claim.push(r);
+      else groups.other.push(r);
+    }
+
+    for (const [key, items] of Object.entries(groups) as [keyof typeof groups, PagefindResult[]][]) {
+      if (items.length === 0) continue;
+      const group = document.querySelector<HTMLElement>(`[data-group="${key}"]`)!;
+      const list = document.querySelector<HTMLElement>(`[data-list="${key}"]`)!;
+      group.hidden = false;
+      list.replaceChildren(...items.map(render));
+    }
+  }
+
+  function render(r: PagefindResult): HTMLElement {
+    const node = (template.content.cloneNode(true) as DocumentFragment)
+      .firstElementChild as HTMLElement;
+    const a = node.querySelector<HTMLAnchorElement>('[data-title]')!;
+    const excerpt = node.querySelector<HTMLElement>('[data-excerpt]')!;
+    const meta = node.querySelector<HTMLElement>('[data-meta]')!;
+
+    a.href = r.url;
+    a.textContent = (r.meta?.title as string | undefined) ?? r.url;
+    excerpt.innerHTML = r.excerpt;
+
+    const parts: string[] = [];
+    if (r.meta?.area) parts.push(r.meta.area as string);
+    if (r.meta?.task_type) parts.push(r.meta.task_type as string);
+    meta.textContent = parts.join(' · ');
+    meta.hidden = parts.length === 0;
+
+    return node;
+  }
+
+  // Label lookups (mirrors the server-side label functions for client use).
+  const AREA_LABELS: Record<string, string> = {
+    research: 'Research',
+    learning: 'Learning',
+    teaching: 'Teaching',
+    writing: 'Writing',
+    other: 'Other',
+  };
+  const TASK_LABELS: Record<string, string> = {
+    literature_search: 'Literature search',
+    conjecture_generation: 'Conjecture generation',
+    proof_drafting: 'Proof drafting',
+    proof_checking: 'Proof checking',
+    formalisation: 'Formalisation',
+    computation: 'Computation',
+    exposition: 'Exposition',
+    translation: 'Translation',
+    referee_work: 'Referee work',
+    other: 'Other',
+  };
+
+  function areaLabel(v: string): string {
+    return AREA_LABELS[v] ?? v;
+  }
+  function taskTypeLabel(v: string): string {
+    return TASK_LABELS[v] ?? v;
+  }
+
+  interface PagefindResult {
+    url: string;
+    excerpt: string;
+    meta?: Record<string, unknown>;
+    filters?: Record<string, unknown>;
+  }
+</script>
+
+<style>
+  .search-page {
+    padding-block: var(--space-2xl);
+    max-width: 52rem;
+  }
+
+  .search-header {
+    margin-block-end: var(--space-lg);
+  }
+
+  .search-form {
+    margin-block-end: var(--space-2xl);
+  }
+
+  .search-input-row {
+    display: flex;
+    gap: var(--space-sm);
+    margin-block-end: var(--space-md);
+  }
+
+  .search-input {
+    flex: 1;
+    padding: var(--space-xs) var(--space-sm);
+    border: var(--border);
+    border-radius: var(--radius-sm);
+    background-color: var(--surface);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: var(--size-3);
+  }
+
+  .search-input:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+    border-color: var(--accent);
+  }
+
+  .search-filters {
+    border: 0;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+  }
+
+  .filter-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3xs) var(--space-2xs);
+  }
+
+  .filter-group__label {
+    font-size: var(--size-1);
+    font-family: var(--font-mono);
+    letter-spacing: var(--tracking-wide);
+    color: var(--ink-muted);
+    min-width: 5rem;
+  }
+
+  .filter-chip {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3xs);
+    padding: var(--space-3xs) var(--space-xs);
+    border: var(--border);
+    border-radius: var(--radius-sm);
+    font-size: var(--size-1);
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .filter-chip:has(input:checked) {
+    background-color: var(--accent);
+    border-color: var(--accent);
+    color: var(--ground);
+  }
+
+  .filter-chip input[type='radio'] {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+
+  .filter-chip:focus-within {
+    outline: var(--focus-ring);
+    outline-offset: 1px;
+  }
+
+  .search-people-hint {
+    font-size: var(--size-2);
+    color: var(--ink-muted);
+    margin-block-end: var(--space-lg);
+  }
+
+  .search-status {
+    font-size: var(--size-2);
+    color: var(--ink-muted);
+    margin-block-end: var(--space-lg);
+  }
+
+  .results-group {
+    margin-block-end: var(--space-2xl);
+  }
+
+  .results-group__heading {
+    font-size: var(--size-3);
+    margin-block-end: var(--space-md);
+    padding-block-end: var(--space-2xs);
+    border-block-end: var(--border);
+  }
+
+  .results-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-lg);
+  }
+
+  .result-item__title {
+    display: block;
+    font-family: var(--font-serif);
+    font-size: var(--size-4);
+    font-weight: var(--weight-semibold);
+    color: var(--accent-strong);
+    margin-block-end: var(--space-2xs);
+  }
+
+  .result-item__excerpt {
+    font-size: var(--size-2);
+    line-height: var(--leading-relaxed);
+    margin-block-end: var(--space-2xs);
+  }
+
+  /* Pagefind wraps matched terms in <mark>. Style with ink colour, not yellow. */
+  .result-item__excerpt :global(mark) {
+    background: transparent;
+    color: var(--ink);
+    font-weight: var(--weight-semibold);
+  }
+
+  .result-item__meta {
+    font-family: var(--font-mono);
+    font-size: var(--size-1);
+    letter-spacing: var(--tracking-wide);
+    color: var(--ink-muted);
+  }
+</style>

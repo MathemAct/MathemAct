@@ -1,0 +1,134 @@
+---
+/**
+ * How old a report is, and whether that matters.
+ *
+ * A report written against a 2025 model is misleading by 2026, and the interface has to
+ * say so without being read closely. The tombstone does that at a glance; this adds the two
+ * things a glance cannot carry — when the tool was actually used, and, where it matters, a
+ * sentence saying plainly that the account describes an older version of the tool.
+ *
+ * The wording of that sentence is careful. It does not say the report is wrong, because
+ * nobody has checked; it says the tool has moved, which is a fact, and leaves the reader to
+ * draw the conclusion. Anything stronger would be a claim the corpus has not earned, and
+ * anything weaker would be the hedge that made the note not worth printing.
+ *
+ * Every judgement here comes from public.report_staleness. Nothing is recomputed: the
+ * same answer has to appear in a listing, on this page, and in the export.
+ */
+import Tombstone from './Tombstone.astro';
+import { longDate, monthsAgo, monthsSince } from '../lib/format';
+import type { Staleness } from '../lib/reports';
+import { VERDICT } from '../lib/status';
+import type { Outcome } from '../lib/status';
+
+interface Props {
+  staleness: Staleness;
+  outcome: Outcome;
+  /** The detail page shows the sentence; a listing card shows only the glyph and the age. */
+  verbose?: boolean;
+}
+
+const { staleness, outcome, verbose = false } = Astro.props;
+
+const age = monthsSince(staleness.latestToolUse);
+const isOld = age !== null && age >= 12;
+
+/**
+ * Somebody rechecked this and found something else. Read off `holds` rather than compared
+ * against a verdict name, because there are two ways for an account to stop describing
+ * what happens and only one of them is "it no longer works" — a report of a failure that
+ * somebody has since got working has changed just as much, and is the more interesting of
+ * the two.
+ */
+const latest = staleness.latestVerdict;
+const hasChanged = latest !== null && !VERDICT[latest].holds;
+---
+
+<div class="staleness">
+  <p class="staleness__line">
+    <Tombstone status={staleness.tombstoneStatus} outcome={outcome} />
+  </p>
+
+  {
+    staleness.latestToolUse && (
+      <p class="staleness__age">
+        <span class="meta">{longDate(staleness.latestToolUse)}</span>
+        <span class="staleness__relative">— tool last used {monthsAgo(staleness.latestToolUse)}</span>
+      </p>
+    )
+  }
+
+  {
+    verbose && staleness.confirmationCount > 0 && (
+      <p class="staleness__age">
+        <span class="meta">
+          {staleness.confirmationCount}
+          {staleness.confirmationCount === 1 ? ' confirmation' : ' confirmations'}
+        </span>
+        <span class="staleness__relative">
+          — most recent {monthsAgo(staleness.latestConfirmationAt)}
+        </span>
+      </p>
+    )
+  }
+
+  {
+    verbose && isOld && (
+      <p class="staleness__warning">
+        This account describes a version of the tool that is over a year old. Models change
+        underneath the same name, so what happened here may not be what happens now — and
+        nobody has confirmed either way since.
+      </p>
+    )
+  }
+
+  {
+    verbose && hasChanged && (
+      <p class="staleness__warning">
+        {outcome === 'failed'
+          ? 'Somebody has tried this since and got it to work. Their note is below.'
+          : 'Somebody has tried this since and reported that it no longer works. Their note is below.'}
+      </p>
+    )
+  }
+</div>
+
+<style>
+  .staleness {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3xs);
+  }
+
+  .staleness__line {
+    margin: 0;
+  }
+
+  .staleness__age {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3xs);
+    align-items: baseline;
+    margin: 0;
+    font-size: var(--size-2);
+    color: var(--ink-muted);
+  }
+
+  .meta {
+    font-family: var(--font-mono);
+    font-size: var(--size-1);
+    letter-spacing: var(--tracking-wide);
+    color: var(--ink-muted);
+  }
+
+  /* A rule rather than a colour. The three outcome colours mean one thing on this site and
+     borrowing one for "this is old" would make all four mean less. */
+  .staleness__warning {
+    max-width: var(--measure);
+    margin-block-start: var(--space-2xs);
+    padding: var(--space-2xs) var(--space-sm);
+    border-inline-start: var(--border-width-thick) solid var(--ink);
+    background-color: var(--surface);
+    font-size: var(--size-2);
+  }
+</style>

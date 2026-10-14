@@ -1,0 +1,291 @@
+---
+/**
+ * The reason half of answering a claim: endorse what is already here, or write your own.
+ *
+ * Sits inside the answering form, below the scale, and is submitted with it — one form, one
+ * button, one transaction (`public.answer_claim()`). Joining a claim somebody else proposed
+ * means a position *and* a reason; the database refuses a scored first answer without one, and
+ * this is the form agreeing with it. Behaviour is in `src/lib/answer-form.ts`, shared with
+ * `/opinions/view/`.
+ *
+ * What it offers, in order
+ * ------------------------
+ * The contributions written from the score the reader has just picked — so the first thing they
+ * read is what people who answered the same way have already said, each with the two endorsement
+ * choices. Then a control for contributions from every other position, because "I agree with the
+ * position, but not this reason" is often said of a reason written one point away. Then, collapsed
+ * while there is something to read first, the box for writing one's own.
+ *
+ * Why the contributions appear twice in the page
+ * ----------------------------------------------
+ * They are also rendered in `Contributions.astro` further down. The alternative was a form spread
+ * across the page — a scale here, endorsement buttons in a section below, a submit button
+ * somewhere — and a reader cannot tell what one button will save when its inputs are in three
+ * places. **These copies carry no `id`**: the rule that a contribution is rendered once is about
+ * `#comment-<id>`, which the activity feed hands out as an address, and that stays unique.
+ *
+ * No badges, as on every claim contribution: name, position and date only.
+ */
+import { ENDORSEMENT_ACTIONS } from '../lib/endorsements';
+import { longDate } from '../lib/format';
+import { renderMarkdown } from '../lib/markdown';
+import { allGroupKeys, groupKeyFor, positionLabel } from '../lib/positions';
+import type { Comment } from '../lib/comments';
+
+interface Props {
+  /** Every contribution on the claim, flat. Empty on `/opinions/view/`. */
+  contributions: readonly Comment[];
+}
+
+const { contributions }: Props = Astro.props;
+
+/**
+ * What can be endorsed: live contributions with a recorded position. A deleted one has no reason
+ * left to hold, and the database refuses an endorsement of it. One from an export older than the
+ * score column has no position to sit under — it can still be endorsed from the section below.
+ */
+const order = allGroupKeys();
+const candidates = contributions
+  .filter((c) => !c.deletedAt && c.positionKnown)
+  .map((c) => ({ contribution: c, key: groupKeyFor(c.agreementScore, c.positionKnown) }))
+  .sort(
+    (a, b) =>
+      order.indexOf(a.key) - order.indexOf(b.key) ||
+      b.contribution.createdAt.localeCompare(a.contribution.createdAt),
+  );
+
+const rendered = new Map<string, string>();
+for (const { contribution } of candidates) {
+  rendered.set(contribution.id, await renderMarkdown(contribution.body));
+}
+---
+
+<fieldset class="reason" data-reason hidden>
+  <legend class="reason__legend">
+    Your reason <span class="reason__optional" data-reason-optional hidden>(optional)</span>
+  </legend>
+
+  {/* Rewritten by the script for the case in hand: required, optional for "no opinion",
+      optional for a change of answer. This default is the required case. */}
+  <p class="reason__hint" data-reason-hint>
+    Endorse a contribution that captures your view, or write your own. It is recorded with your
+    position.
+  </p>
+
+  <ol class="reason__list" data-reason-here role="list"></ol>
+  <p class="reason__empty meta" data-reason-here-empty hidden></p>
+
+  <button
+    class="link-button reason__others-toggle"
+    type="button"
+    data-reason-others-toggle
+    aria-controls="reason-others"
+    aria-expanded="false"
+    hidden>Show contributions from other positions</button>
+
+  <div class="reason__others" id="reason-others" data-reason-others hidden>
+    <ol class="reason__list" data-reason-others-list role="list">
+      {candidates.map(({ contribution, key }) => (
+        <li
+          class="candidate"
+          data-candidate
+          data-comment-id={contribution.id}
+          data-position={key}
+          data-author={contribution.author?.id ?? ''}
+        >
+          <div class="candidate__head">
+            <span class="candidate__who">
+              {contribution.author?.displayName ?? 'A former member'}
+            </span>
+            <span class="candidate__position">
+              {positionLabel(contribution.agreementScore, contribution.positionKnown)}
+            </span>
+            <span class="candidate__date meta">{longDate(contribution.createdAt)}</span>
+          </div>
+
+          <div class="candidate__body markdown" set:html={rendered.get(contribution.id) ?? ''} />
+
+          {/* Three choices, one of them "neither", so the group always has an answer and leaving
+              it alone is visibly a choice rather than an omission. Not checkboxes: the two
+              endorsements are mutually exclusive, which is what one radio group says. */}
+          <fieldset class="candidate__choices">
+            <legend class="visually-hidden">
+              Your view of the contribution by {contribution.author?.displayName ?? 'a former member'}
+            </legend>
+            {ENDORSEMENT_ACTIONS.map((action) => (
+              <label class="candidate__choice">
+                <input type="radio" name={`endorse-${contribution.id}`} value={action.kind} />
+                <span>{action.label}</span>
+              </label>
+            ))}
+            <label class="candidate__choice candidate__choice--none">
+              <input type="radio" name={`endorse-${contribution.id}`} value="" checked />
+              <span>Neither</span>
+            </label>
+          </fieldset>
+        </li>
+      ))}
+    </ol>
+  </div>
+
+  <div class="reason__write">
+    <button class="link-button" type="button" data-reason-write-reveal hidden>
+      None of these captures it — write my own
+    </button>
+
+    <div class="field" data-reason-write hidden>
+      <label class="field__label" for="answer-body">Your contribution</label>
+      <div class="field__hint" id="answer-body-hint">
+        <p>
+          Say what your position is a reason for. Markdown, and TeX between dollar signs:
+          <code>$\pi_1(X)$</code>. If something above already says it, endorsing that counts for
+          more than posting a variant — it shows how many people hold the reason.
+        </p>
+      </div>
+      <textarea
+        class="field__control"
+        id="answer-body"
+        name="answer-body"
+        rows={6}
+        maxlength={5000}
+        data-reason-body
+        aria-describedby="answer-body-hint"></textarea>
+      <p class="field__counter" data-counter-for="answer-body" data-max="5000">
+        <span data-counter-value>0</span> / 5000
+      </p>
+      <p class="field__hint">
+        You can edit it for 24 hours, and only until somebody says it captures their view.
+      </p>
+    </div>
+  </div>
+</fieldset>
+
+<style>
+  .reason {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+    margin: var(--space-lg) 0 0;
+    padding: var(--space-sm) 0 0;
+    border: 0;
+    border-block-start: var(--border);
+  }
+
+  .reason__legend {
+    float: left;
+    width: 100%;
+    padding: 0;
+    font-weight: var(--weight-semibold);
+  }
+
+  .reason__optional {
+    font-weight: var(--weight-normal);
+    color: var(--ink-muted);
+  }
+
+  .reason__hint,
+  .reason__empty {
+    margin: 0;
+    max-width: var(--measure);
+  }
+
+  .reason__hint {
+    color: var(--ink-muted);
+  }
+
+  .reason__list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .reason__list:empty {
+    display: none;
+  }
+
+  .reason__others-toggle {
+    align-self: flex-start;
+  }
+
+  .candidate {
+    padding: var(--space-sm);
+    border: var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+  }
+
+  .candidate__head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2xs) var(--space-sm);
+    flex-wrap: wrap;
+  }
+
+  .candidate__who {
+    font-weight: var(--weight-semibold);
+  }
+
+  /* Stated, not badged, and never coloured by agreement — same as on a contribution. */
+  .candidate__position {
+    font-family: var(--font-mono);
+    font-size: var(--size-0);
+    color: var(--ink-muted);
+  }
+
+  .candidate__date {
+    margin-inline-start: auto;
+  }
+
+  .candidate__body {
+    margin-block-start: var(--space-2xs);
+  }
+
+  .candidate__choices {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2xs) var(--space-md);
+    margin: var(--space-xs) 0 0;
+    padding: var(--space-xs) 0 0;
+    border: 0;
+    border-block-start: var(--border);
+  }
+
+  .candidate__choice {
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--space-2xs);
+    cursor: pointer;
+  }
+
+  .candidate__choice input {
+    margin: 0;
+    accent-color: var(--accent);
+  }
+
+  .candidate__choice:has(input:focus-visible) {
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-offset);
+  }
+
+  /* The chosen one reads as chosen by weight as well as by the radio. */
+  .candidate__choice:has(input:checked) {
+    font-weight: var(--weight-semibold);
+  }
+
+  /* "Neither" is the untouched state, so it stays quiet when chosen. Emphasis is for a choice
+     the reader made; otherwise every card's loudest word is the one nobody picked. */
+  .candidate__choice--none,
+  .candidate__choice--none:has(input:checked) {
+    font-weight: var(--weight-normal);
+    color: var(--ink-muted);
+  }
+
+  @media (max-width: 42rem) {
+    .candidate__date {
+      margin-inline-start: 0;
+    }
+  }
+</style>

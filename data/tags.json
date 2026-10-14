@@ -1,0 +1,226 @@
+[
+  {
+    "id": "0e12e4f3-460d-4bae-a81c-49d9fe0146d8",
+    "code": "math.AC",
+    "label": "Commutative Algebra",
+    "scheme": "arxiv",
+    "sortOrder": 10
+  },
+  {
+    "id": "6a1a6f29-4f33-4024-a511-8491da5df7eb",
+    "code": "math.AG",
+    "label": "Algebraic Geometry",
+    "scheme": "arxiv",
+    "sortOrder": 20
+  },
+  {
+    "id": "c9eb5ba7-d57c-42b2-bbff-79cf1a7b8f8f",
+    "code": "math.AP",
+    "label": "Analysis of PDEs",
+    "scheme": "arxiv",
+    "sortOrder": 30
+  },
+  {
+    "id": "a3bbba3d-f194-4ab1-a114-15eaef8d7d61",
+    "code": "math.AT",
+    "label": "Algebraic Topology",
+    "scheme": "arxiv",
+    "sortOrder": 40
+  },
+  {
+    "id": "af5c1a22-d3ed-4316-8ee9-418a403e79b7",
+    "code": "math.CA",
+    "label": "Classical Analysis and ODEs",
+    "scheme": "arxiv",
+    "sortOrder": 50
+  },
+  {
+    "id": "f32c2755-6811-4c8f-b73d-e4bff8c67aa0",
+    "code": "math.CO",
+    "label": "Combinatorics",
+    "scheme": "arxiv",
+    "sortOrder": 60
+  },
+  {
+    "id": "36dd73ae-2eb9-4e79-a541-0229d79d204d",
+    "code": "math.CT",
+    "label": "Category Theory",
+    "scheme": "arxiv",
+    "sortOrder": 70
+  },
+  {
+    "id": "86a58466-e7e6-485f-b404-f98867b3f5d4",
+    "code": "math.CV",
+    "label": "Complex Variables",
+    "scheme": "arxiv",
+    "sortOrder": 80
+  },
+  {
+    "id": "67546a13-e2fe-4dbf-a36d-650d8390870b",
+    "code": "math.DG",
+    "label": "Differential Geometry",
+    "scheme": "arxiv",
+    "sortOrder": 90
+  },
+  {
+    "id": "35d3c835-f5fb-4892-b443-b15f84673cba",
+    "code": "math.DS",
+    "label": "Dynamical Systems",
+    "scheme": "arxiv",
+    "sortOrder": 100
+  },
+  {
+    "id": "a63ab900-a92c-4728-afb9-07de0b4efa0d",
+    "code": "math.FA",
+    "label": "Functional Analysis",
+    "scheme": "arxiv",
+    "sortOrder": 110
+  },
+  {
+    "id": "33b5020a-c194-469f-8139-79a75995eb94",
+    "code": "math.GM",
+    "label": "General Mathematics",
+    "scheme": "arxiv",
+    "sortOrder": 120
+  },
+  {
+    "id": "b0846e7c-d06a-40be-abdf-9a3ffd24132d",
+    "code": "math.GN",
+    "label": "General Topology",
+    "scheme": "arxiv",
+    "sortOrder": 130
+  },
+  {
+    "id": "fc83fb15-c1da-444d-bfcf-d23bfcd33f0b",
+    "code": "math.GR",
+    "label": "Group Theory",
+    "scheme": "arxiv",
+    "sortOrder": 140
+  },
+  {
+    "id": "2ffea99c-cf90-4af4-95af-21437a6e3b50",
+    "code": "math.GT",
+    "label": "Geometric Topology",
+    "scheme": "arxiv",
+    "sortOrder": 150
+  },
+  {
+    "id": "5ed8df1c-fc48-4058-bdb3-4065ea7a2f5a",
+    "code": "math.HO",
+    "label": "History and Overview",
+    "scheme": "arxiv",
+    "sortOrder": 160
+  },
+  {
+    "id": "7eb638f1-28ba-4e69-9dac-0d5f29f3a7a4",
+    "code": "math.IT",
+    "label": "Information Theory",
+    "scheme": "arxiv",
+    "sortOrder": 170
+  },
+  {
+    "id": "b15ca402-685a-4e6e-878a-f3229b36b9b2",
+    "code": "math.KT",
+    "label": "K-Theory and Homology",
+    "scheme": "arxiv",
+    "sortOrder": 180
+  },
+  {
+    "id": "ad663cd0-4689-4fc0-8f15-235c73e91c5d",
+    "code": "math.LO",
+    "label": "Logic",
+    "scheme": "arxiv",
+    "sortOrder": 190
+  },
+  {
+    "id": "825ed4db-e776-4add-86ec-70b62fff0c6d",
+    "code": "math.MG",
+    "label": "Metric Geometry",
+    "scheme": "arxiv",
+    "sortOrder": 200
+  },
+  {
+    "id": "c52f1866-9e26-4ff4-8acf-785e2c6f57b3",
+    "code": "math.MP",
+    "label": "Mathematical Physics",
+    "scheme": "arxiv",
+    "sortOrder": 210
+  },
+  {
+    "id": "2ac891e1-70fa-4ed9-bbb4-e909c2607a75",
+    "code": "math.NA",
+    "label": "Numerical Analysis",
+    "scheme": "arxiv",
+    "sortOrder": 220
+  },
+  {
+    "id": "bd978e06-881c-4d1c-b5f2-a95355e56a22",
+    "code": "math.NT",
+    "label": "Number Theory",
+    "scheme": "arxiv",
+    "sortOrder": 230
+  },
+  {
+    "id": "5a346800-d62b-4546-8045-9c62cdb5b827",
+    "code": "math.OA",
+    "label": "Operator Algebras",
+    "scheme": "arxiv",
+    "sortOrder": 240
+  },
+  {
+    "id": "1516806e-972e-4023-9bf6-ecde31ead602",
+    "code": "math.OC",
+    "label": "Optimization and Control",
+    "scheme": "arxiv",
+    "sortOrder": 250
+  },
+  {
+    "id": "db975e61-2b70-489b-b1ed-bb8a333bc4f7",
+    "code": "math.PR",
+    "label": "Probability",
+    "scheme": "arxiv",
+    "sortOrder": 260
+  },
+  {
+    "id": "23ffce4b-f7f7-4af0-ab75-ce40460f938b",
+    "code": "math.QA",
+    "label": "Quantum Algebra",
+    "scheme": "arxiv",
+    "sortOrder": 270
+  },
+  {
+    "id": "75a8e5aa-1443-4d92-bf35-c211518dcf01",
+    "code": "math.RA",
+    "label": "Rings and Algebras",
+    "scheme": "arxiv",
+    "sortOrder": 280
+  },
+  {
+    "id": "a59bd027-2b73-4adc-8d67-75c9ba662b7e",
+    "code": "math.RT",
+    "label": "Representation Theory",
+    "scheme": "arxiv",
+    "sortOrder": 290
+  },
+  {
+    "id": "212368f4-5372-4bdf-9df5-e09a0353e7e4",
+    "code": "math.SG",
+    "label": "Symplectic Geometry",
+    "scheme": "arxiv",
+    "sortOrder": 300
+  },
+  {
+    "id": "9325a824-e564-4c3c-bc8b-acc0ba009cb1",
+    "code": "math.SP",
+    "label": "Spectral Theory",
+    "scheme": "arxiv",
+    "sortOrder": 310
+  },
+  {
+    "id": "df76c488-9f65-4783-a77b-7430340180a7",
+    "code": "math.ST",
+    "label": "Statistics Theory",
+    "scheme": "arxiv",
+    "sortOrder": 320
+  }
+]

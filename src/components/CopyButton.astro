@@ -1,0 +1,60 @@
+---
+/**
+ * Copy something to the clipboard and say so.
+ *
+ * Used for the transcript excerpt and the citation string, which are the two things on a
+ * report page a reader most plausibly wants to take somewhere else — into a paper, into a
+ * terminal, into their own attempt at the same thing.
+ *
+ * The confirmation is a text change on the button rather than a toast. A toast appears away
+ * from the thing that caused it, disappears before a slow reader gets to it, and needs a
+ * live region to be announced at all; a label that says "Copied" is in the place the person
+ * is already looking, and screen readers announce it because focus is on it.
+ *
+ * The text is carried in a data attribute rather than read from the DOM, so that copying a
+ * transcript gives exactly the characters that were submitted — not whatever collapsing and
+ * re-wrapping the browser did to render them.
+ */
+interface Props {
+  /** What lands on the clipboard. */
+  text: string;
+  label?: string;
+  /** Announced state after a successful copy. */
+  done?: string;
+}
+
+const { text, label = 'Copy', done = 'Copied' } = Astro.props;
+---
+
+<button class="button button--quiet copy" type="button" data-copy={text} data-copy-done={done}>
+  {label}
+</button>
+
+<script>
+  for (const button of document.querySelectorAll<HTMLButtonElement>('[data-copy]')) {
+    button.addEventListener('click', async () => {
+      const text = button.dataset.copy ?? '';
+      const idle = button.textContent ?? 'Copy';
+
+      try {
+        await navigator.clipboard.writeText(text);
+        button.textContent = button.dataset.copyDone ?? 'Copied';
+      } catch {
+        // Denied by permissions policy, or an insecure context. Saying so beats a button
+        // that looks like it worked.
+        button.textContent = 'Press Ctrl+C';
+      }
+
+      window.setTimeout(() => {
+        button.textContent = idle;
+      }, 2500);
+    });
+  }
+</script>
+
+<style>
+  .copy {
+    padding-block: var(--space-3xs);
+    font-size: var(--size-2);
+  }
+</style>

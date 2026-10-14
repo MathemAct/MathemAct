@@ -1,0 +1,216 @@
+---
+import Page from '../layouts/Page.astro';
+import { path } from '../lib/paths';
+import { SITE } from '../lib/site';
+---
+
+<Page
+  title="Code of conduct"
+  description="What is expected of contributors to MathemAct, what is not tolerated, and what happens when the line is crossed."
+  lead="MathemAct is meant to be a place where mathematicians can describe their experiences with AI openly, including failures, doubts, and uncomfortable results. That only works if people can disagree without making participation personally costly."
+  updated="October 2026"
+>
+  <p class="status">
+    This is the short version. The full text is
+    <a href={`${SITE.repository}/blob/main/docs/code-of-conduct.md`}>in the repository</a>.
+    Where the two differ, the full text governs and this page is what needs fixing.
+  </p>
+
+  <h2>Scope</h2>
+
+  <p>
+    This code applies to everything posted on MathemAct - reports, comments, ratings, flags,
+    and other contributions - as well as messages sent through contact details listed on the site.
+    It applies to everyone, including moderators.
+  </p>
+
+  <h2>What we expect</h2>
+
+  <dl class="items">
+    <dt>Discuss the work, not the person</dt>
+    <dd>
+      <i>“I don’t think this verification rules out the main source of error”</i> is useful criticism.<br>
+      <i>“Anyone who trusts a chatbot with a proof is not a serious mathematician”</i> is not.<br>
+      Try to make criticism something another person can respond to.
+    </dd>
+
+    <dt>Assume good faith</dt>
+    <dd>
+      People here are describing their own experiences, often including things that went wrong.
+      You can question a claim, ask how something was checked, or ask for more evidence. But do
+      not start from the assumption that someone is lying or acting dishonestly without a reason.
+    </dd>
+
+    <dt>Respect pseudonyms</dt>
+    <dd>
+      Some contributors may not want their activity on this site connected to their professional
+      identity.<br>
+      Do not try to identify pseudonymous contributors, speculate publicly about who they are,
+      or reveal information that could identify them.
+    </dd>
+
+    <dt>Do not weaponise a disclosure</dt>
+    <dd>
+      People may share things here that they would not normally disclose publicly: extensive AI use,
+      failed attempts, mistakes, or uncertain results.<br>
+      Do not use information disclosed on MathemAct to target someone professionally or personally
+      - for example in hiring, refereeing, grant discussions, or public attacks.
+    </dd>
+
+    <dt>Respect other people's material</dt>
+    <dd>
+      Only post material that you have the right to share.
+      Before posting transcripts, remove unpublished work, private correspondence, referee reports,
+      or other material belonging to someone who has not agreed to its publication.
+    </dd>
+  </dl>
+
+  <h2>What is not acceptable</h2>
+
+  <p>The following is not allowed:</p>
+
+  <ul>
+    <li>harassment, intimidation, threats, or sustained personal hostility;</li>
+    <li>attempts to identify pseudonymous contributors or reveal someone's private information;</li>
+    <li>demeaning remarks based on nationality, gender, religion, disability, age, institution, career stage, or similar personal characteristics;</li>
+    <li>fabricated reports, transcripts, outcomes, or verification steps;</li>
+    <li>spam or promotion presented as a genuine contribution;</li>
+    <li>publishing private or unpublished material without permission.</li>
+  </ul>
+
+  <p>
+    Strong disagreement is not a violation. Neither is reporting that a popular tool failed, that
+    an unpopular one worked, or that you disagree with the prevailing view.
+  </p>
+
+  <h2>Flagging content</h2>
+
+  <p>
+    Reports, claims, and comments can be flagged from the page where they appear.
+  </p>
+  
+  <p>
+    MathemAct does not pre-moderate contributions, so flags are the main way potential problems
+    are brought to moderators' attention. If the issue concerns a moderator, or you prefer not to
+    use the site, you can write to <a href={`mailto:${SITE.contactEmail}`}>{SITE.contactEmail}</a>.
+  </p>
+
+  <p>
+    When flagging something, tell us what you are concerned about and where it appears. You do not need to justify why you found it upsetting or offensive.
+  </p>
+
+  <h2>What happens after a flag</h2>
+
+  <p>
+    Moderation is volunteer-run, so decisions may take a few days.
+  </p>
+
+  <p>
+    Content that appears likely to cause serious harm may be temporarily hidden while it is reviewed.
+    Temporary hiding does not mean that a violation has been found.
+  </p>
+
+  <p>
+    When a decision is made, both the author and the person who flagged the content receive a short
+    explanation under moderation decisions on their account pages. The identity of the person who
+    submitted the flag is not disclosed, and decisions are presented as decisions of the site rather
+    than of an individual moderator.
+  </p>
+
+  <p>
+    Moderators also keep an internal record of decisions, including what was decided and why.
+  </p>
+
+  <p>Depending on the situation:</p>
+
+  <ul>
+    <li>the content may remain unchanged;</li>
+    <li>the content may be hidden;</li>
+    <li>an account may be suspended;</li>
+    <li>in serious cases, an account may be removed.</li>
+  </ul>
+
+  <p>
+    Hidden content is preserved and can be restored. Authors can also edit hidden reports where
+    appropriate.
+  </p>
+
+  <p>
+    If action is taken against your content or account, you will be told which rule was applied and why.
+    You can ask for the decision to be reconsidered.
+  </p>
+
+  <p>
+    Attempts to deanonymise contributors and serious harassment may lead to action without a prior warning.
+  </p>
+
+  <h2>Account suspension</h2>
+
+  <p>
+    Suspension is used when the problem is not a single contribution but an ongoing pattern, such as
+    repeated spam or sustained hostility toward other contributors.
+  </p>
+
+  <p>
+    Being wrong, posting a negative result, or making one poorly judged contribution is not in itself
+    grounds for suspension.
+  </p>
+
+  <p>
+    A suspended account still exists. You can sign in, read the site, manage your profile and password,
+    and request deletion of your account. You cannot post, comment, answer claims, submit reports, flag
+    content, or otherwise make new contributions while the suspension is active.
+  </p>
+
+  <p>Existing contributions normally stay visible unless there is a separate reason to moderate them.</p>
+
+  <p>
+    If your account is suspended, the reason will appear under moderation decisions on your account page.
+    Suspensions are not shown publicly: there is no public badge or list of suspended users.
+  </p>
+
+  <p>
+    You can appeal a suspension by writing to 
+    <a href={`mailto:${SITE.contactEmail}`}>{SITE.contactEmail}</a>. Where possible, an appeal will be
+    reviewed by a different moderator. Suspensions can be lifted, and the reason for doing so will also
+    be recorded.
+  </p>
+
+  <p>
+    Moderators cannot suspend themselves or other moderators through the normal moderation interface.
+  </p>
+
+  <h2>Changes to this code</h2>
+
+  <p>This code will evolve as MathemAct encounters situations we did not anticipate.</p>
+  
+  <p>
+    Changes are dated and recorded in the
+    <a href={SITE.repository}>public repository</a>. The
+    <a href={path('/privacy/')}>privacy notice</a> explains what information the site stores and
+    what happens to your contributions if you leave.
+  </p>
+</Page>
+
+<style>
+  .status {
+    padding: var(--space-sm);
+    border: var(--border);
+    background-color: var(--surface);
+    font-size: var(--size-2);
+  }
+
+  .items {
+    margin: 0;
+  }
+
+  .items dt {
+    margin-block-start: var(--space-md);
+    font-weight: var(--weight-semibold);
+  }
+
+  .items dd {
+    margin-block-start: var(--space-3xs);
+    margin-inline-start: 0;
+  }
+</style>

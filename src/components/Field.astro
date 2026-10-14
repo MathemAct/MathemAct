@@ -1,0 +1,132 @@
+---
+/**
+ * A labelled form control with its hint and its error message.
+ *
+ * The point of the component is that the wiring is done once. A label bound to its input
+ * by `for`/`id`, a hint and an error referenced by `aria-describedby`, and an error slot
+ * that exists in the markup from the start rather than being created when something goes
+ * wrong — an element inserted after the fact is frequently not announced at all.
+ *
+ * Styling comes from src/styles/forms.css rather than from a scoped block here, because
+ * Astro's scoped-style attribute is not applied to a child component's root element and a
+ * page that tried to adjust one of these fields would be writing selectors that match
+ * nothing. See the note at the top of that file.
+ */
+interface Props {
+  /** Also the control's name. Used to derive the hint and error element ids. */
+  id: string;
+  label: string;
+  /** Extra class on the label element, e.g. "visually-hidden" when the section title already names the field. */
+  labelClass?: string;
+  type?: 'text' | 'email' | 'password' | 'url' | 'textarea';
+  /** Plain-text hint. For anything longer, use the `hint` slot instead. */
+  hint?: string;
+  required?: boolean;
+  /** Real autocomplete tokens matter here: `new-password` is what tells a password
+   *  manager to offer to generate one, and `current-password` is what stops it. */
+  autocomplete?: string;
+  maxlength?: number;
+  rows?: number;
+  value?: string;
+  placeholder?: string;
+  /** Show a live character count against `maxlength`. A cap you discover by being rejected
+   *  is a cap that cost you the paragraph you had just written. */
+  counter?: boolean;
+  /** A worked example, shown under the hint in a disclosure. Long enough to be useful, so
+   *  it is collapsed by default rather than sitting between the label and the input. */
+  example?: string;
+}
+
+const {
+  id,
+  label,
+  labelClass,
+  type = 'text',
+  hint,
+  required = false,
+  autocomplete,
+  maxlength,
+  rows = 4,
+  value = '',
+  placeholder,
+  counter = false,
+  example,
+} = Astro.props;
+
+const hintId = `${id}-hint`;
+const errorId = `${id}-error`;
+const hasHint = Boolean(hint) || Astro.slots.has('hint');
+
+// The error element is always described, even while empty and hidden. Assembling the list
+// only when there is an error would change the attribute at the moment the message
+// appears, which several screen readers handle by not announcing it.
+const describedBy = [hasHint ? hintId : null, errorId].filter(Boolean).join(' ');
+---
+
+<div class="field">
+  <label class={`field__label${labelClass ? ' ' + labelClass : ''}`} for={id}>
+    {label}
+    {!required && <span class="field__optional">optional</span>}
+  </label>
+
+  {
+    hasHint && (
+      <div class="field__hint" id={hintId}>
+        <slot name="hint">
+          <p>{hint}</p>
+        </slot>
+      </div>
+    )
+  }
+
+  {
+    example && (
+      <details class="field__example">
+        <summary>Show an example</summary>
+        <p>{example}</p>
+      </details>
+    )
+  }
+
+  {
+    type === 'textarea' ? (
+      <textarea
+        class="field__control"
+        id={id}
+        name={id}
+        rows={rows}
+        maxlength={maxlength}
+        required={required}
+        placeholder={placeholder}
+        aria-describedby={describedBy}
+        set:text={value}
+      />
+    ) : (
+      <input
+        class="field__control"
+        id={id}
+        name={id}
+        type={type}
+        value={value}
+        maxlength={maxlength}
+        required={required}
+        autocomplete={autocomplete}
+        placeholder={placeholder}
+        aria-describedby={describedBy}
+      />
+    )
+  }
+
+  {
+    counter && maxlength && (
+      /* aria-live is deliberately absent. A counter that announced itself on every
+         keystroke would make the field unusable with a screen reader; the cap is stated in
+         the hint, and the error on submission says the number. */
+      <p class="field__counter" data-counter-for={id} data-max={maxlength}>
+        <span data-counter-value>0</span> / {maxlength}
+      </p>
+    )
+  }
+
+  <p class="field__error" id={errorId} hidden></p>
+</div>

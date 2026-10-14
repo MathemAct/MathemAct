@@ -1,0 +1,411 @@
+---
+/**
+ * Your activity: what you did here, and what happened because of it.
+ *
+ * This is the page docs/moderation.md has been promising by its absence — "No notification
+ * of any kind. Nothing tells an author what happened to what they posted. They find out by
+ * looking." This is the looking, gathered into one place.
+ *
+ * It says *that* something happened and never why: a moderation decision's reason is written
+ * to a person and lives in public.moderation_notices, which /account/#decisions reads. Rows
+ * about a decision link there rather than to the post, because for a hide that is also the
+ * only page that still works.
+ *
+ * Three decisions worth stating, because each was a fork:
+ *
+ * **One list, not two.** What you did and what others did sit in the same column, in one
+ * order, because that is what makes it a record rather than a queue — "I posted this, three
+ * people rated it, a moderator opened it" is a story and splitting it in half loses the
+ * arrows. The filter above the list is there for the day somebody wants only the second
+ * kind, and it starts on everything.
+ *
+ * **Only the second kind is ever "new".** A badge that counts your own posting is a badge
+ * that gets ignored within a week. `is_inbound` is a database column rather than a client
+ * guess for exactly this reason.
+ *
+ * **The watermark moves after the page has rendered, not before.** The markers are computed
+ * against where it was; writing first would mean nothing was ever new, which is a bug that
+ * looks like an empty feature.
+ *
+ * Like /moderate/, this page cannot be static: it is one person's private view, and the
+ * export must never contain a row of it. Unlike /moderate/, it does not hide — it is an
+ * ordinary account page behind the ordinary gate.
+ */
+import Account from '../../layouts/Account.astro';
+import { path } from '../../lib/paths';
+---
+
+<Account
+  title="Your activity"
+  description="What you have posted, rated and flagged on MathemAct, and what has happened to it since."
+  lead="Everything you have done here, and everything others have done to it, newest first."
+  gate="required"
+>
+  <div class="form-status form-status--error" data-error hidden>
+    <p data-error-text></p>
+  </div>
+
+  {/* Rendered only once there is a count to state. "0 new" is a sentence nobody needs. */}
+  <p class="activity__new-count mono" data-new-count hidden></p>
+
+  <div class="activity__filter" data-filter hidden role="group" aria-label="Filter activity">
+    <button class="pill pill--on" type="button" data-scope="all" aria-pressed="true">
+      Everything
+    </button>
+    <button class="pill" type="button" data-scope="inbound" aria-pressed="false">
+      About your posts
+    </button>
+  </div>
+
+  <ul class="activity" data-list role="list"></ul>
+
+  <div class="panel" data-empty hidden>
+    <p class="panel__heading">Nothing here yet</p>
+    <p>
+      This fills up as you use the site: what you post, what you rate, what you flag, and
+      what moderators and other people do with it afterwards.
+    </p>
+    <p class="actions">
+      <a class="button button--primary" href={path('/reports/new/')}>Post a report</a>
+    </p>
+  </div>
+
+  {/* Only ever shown when there is another page behind it, so the feed ends either with
+      this button or with the last thing that happened — never with a control that says
+      there is more and then produces nothing. */}
+  <p class="actions" data-more-block hidden>
+    <button class="button button--secondary" type="button" data-more>Show earlier activity</button>
+  </p>
+
+  {/* Takes the button's place when the last page arrives, rather than the button simply
+      vanishing. Focus is on it at that moment — see the note in the script — and a control
+      that disappears from under a keyboard leaves focus on nothing at all. */}
+  <p class="field__hint" data-end hidden tabindex="-1">That is everything.</p>
+
+  {/* Authored here rather than built in script, so the scoped styles below reach it. */}
+  <template data-item-template>
+    <li class="activity__item">
+      <p class="activity__text" data-text></p>
+      <a class="activity__label" data-label href=""></a>
+      <p class="activity__when mono">
+        <span data-when></span>
+        <span class="activity__new" data-new hidden>new</span>
+      </p>
+    </li>
+  </template>
+</Account>
+
+<script>
+  import { longDate } from '../../lib/format';
+  import { query, setBusy } from '../../lib/forms';
+  import { startSession, subscribeToSession } from '../../lib/session';
+  import { setActivityHint } from '../../lib/activity-hint';
+  import {
+    collapseRatings,
+    describe,
+    loadActivity,
+    loadSeenAt,
+    markSeen,
+  } from '../../lib/activity';
+  import type { ActivityCursor, ActivityItem } from '../../lib/activity';
+
+  const errorBox = query<HTMLElement>('[data-error]');
+  const errorText = query<HTMLElement>('[data-error-text]');
+  const newCount = query<HTMLElement>('[data-new-count]');
+  const filter = query<HTMLElement>('[data-filter]');
+  const list = query<HTMLElement>('[data-list]');
+  const empty = query<HTMLElement>('[data-empty]');
+  const moreBlock = query<HTMLElement>('[data-more-block]');
+  const more = query<HTMLButtonElement>('[data-more]');
+  const end = query<HTMLElement>('[data-end]');
+  const template = query<HTMLTemplateElement>('[data-item-template]');
+
+  /** Every row fetched so far, uncollapsed, in feed order. Pages append to it and the whole
+   *  thing is re-rendered, because collapsing ratings only works across the lot. */
+  let loaded: ActivityItem[] = [];
+  let cursor: ActivityCursor | null = null;
+  let scope = 'all';
+  let userId: string | null = null;
+
+  /**
+   * The watermark as it was when the page opened, in milliseconds.
+   *
+   * Read once and kept. markSeen() moves it a moment after the first render, so a second
+   * page fetched later still has to be marked against where it was when the reader arrived
+   * — otherwise paging down would quietly stop marking anything as new halfway.
+   */
+  let since = 0;
+
+  subscribeToSession((state) => {
+    if (state.status !== 'signed-in') return;
+    if (userId === state.userId) return;
+
+    userId = state.userId;
+    void open(state.userId);
+  });
+
+  void startSession();
+
+  async function open(id: string): Promise<void> {
+    // The watermark is read before the feed and written after it, so "new" means "since the
+    // last time you were on this page" rather than "since a moment ago".
+    const seenAt = await loadSeenAt(id);
+    since = seenAt ? new Date(seenAt).getTime() : 0;
+
+    if (!(await fetchPage(id, null))) return;
+
+    if (loaded.length === 0) {
+      empty.hidden = false;
+      // Nothing waiting, so nothing for the header to advertise on the next page.
+      setActivityHint(0);
+      return;
+    }
+
+    filter.hidden = false;
+    render();
+
+    // Rendered, so it has been seen. Both writes are deliberately after the render: the
+    // markers are already in the DOM and do not change under the reader.
+    setActivityHint(0);
+    void markSeen(id);
+  }
+
+  /** Fetch one page and append it. False if it failed, and the error is already on screen. */
+  async function fetchPage(id: string, after: ActivityCursor | null): Promise<boolean> {
+    const result = await loadActivity(id, after);
+
+    if (!result.ok) {
+      errorText.textContent = result.message;
+      errorBox.hidden = false;
+      return false;
+    }
+
+    loaded = loaded.concat(result.value.items);
+    cursor = result.value.cursor;
+    return true;
+  }
+
+  /**
+   * Rebuild the list from everything loaded so far.
+   *
+   * The whole list rather than the new tail, because collapseRatings() folds a run of
+   * ratings on one claim into a single line and a run does not respect a page boundary.
+   * Re-rendering keeps that line in one place with one count instead of producing a second
+   * copy of it further down. Nothing above the fold changes height, so the scroll position
+   * survives, and the "Show earlier activity" button lives outside the list so that
+   * keyboard focus survives too.
+   */
+  function render(): void {
+    const items = collapseRatings(loaded);
+
+    list.replaceChildren(...items.map((item) => row(item, isNew(item))));
+    applyScope();
+
+    const waiting = items.filter(isNew).length;
+    newCount.hidden = waiting === 0;
+    newCount.textContent =
+      waiting === 1 ? '1 new since you last looked' : `${waiting} new since you last looked`;
+
+    moreBlock.hidden = cursor === null;
+  }
+
+  function isNew(item: ActivityItem): boolean {
+    return item.isInbound && new Date(item.createdAt).getTime() > since;
+  }
+
+  function row(item: ActivityItem, fresh: boolean): HTMLElement {
+    const line = describe(item);
+    const node = template.content.cloneNode(true) as DocumentFragment;
+    const element = node.firstElementChild as HTMLElement;
+
+    element.dataset.inbound = String(item.isInbound);
+    if (fresh) element.classList.add('activity__item--new');
+
+    query<HTMLElement>('[data-text]', element).textContent = line.text;
+
+    const label = query<HTMLAnchorElement>('[data-label]', element);
+
+    if (line.label) {
+      label.textContent = line.label;
+
+      if (line.href) {
+        label.href = line.href;
+      } else {
+        // No link, but the title still belongs on screen — it is how you tell which of your
+        // three pending submissions this row is about. Swapped for a span rather than left
+        // as an anchor with no href, which is focusable in some browsers and announces
+        // itself as a link that goes nowhere.
+        const span = document.createElement('span');
+        span.className = label.className;
+        span.textContent = line.label;
+        label.replaceWith(span);
+      }
+    } else {
+      label.remove();
+    }
+
+    query<HTMLElement>('[data-when]', element).textContent = longDate(item.createdAt);
+    query<HTMLElement>('[data-new]', element).hidden = !fresh;
+
+    return element;
+  }
+
+  /**
+   * The next page.
+   *
+   * Deliberately not an infinite scroll. This is a record people read backwards looking for
+   * something, and a list that grows as you approach its end takes the scrollbar — the only
+   * honest indication of how much is left — and makes it lie. A button also leaves the
+   * choice with the reader, which matters on a metered connection.
+   */
+  more.addEventListener('click', async () => {
+    if (!userId || !cursor) return;
+
+    setBusy(more, true, 'Loading…');
+    const ok = await fetchPage(userId, cursor);
+    setBusy(more, false);
+
+    if (!ok) return;
+
+    render();
+
+    // The button has just hidden itself, and focus was on it. Left alone that puts focus on
+    // a hidden element, which for a keyboard or screen reader is the end of the road — the
+    // next Tab starts again from the top of the document. Move it to the line that replaced
+    // it, which also announces why the button went.
+    if (cursor === null) {
+      end.hidden = false;
+      end.focus();
+    }
+  });
+
+  // The filter hides rows rather than refetching. They are already here; a round trip to
+  // remove some would be slower and could disagree with what is on screen.
+  for (const button of filter.querySelectorAll<HTMLButtonElement>('[data-scope]')) {
+    button.addEventListener('click', () => {
+      scope = button.dataset.scope ?? 'all';
+
+      for (const other of filter.querySelectorAll<HTMLButtonElement>('[data-scope]')) {
+        const on = other === button;
+        other.classList.toggle('pill--on', on);
+        other.setAttribute('aria-pressed', String(on));
+      }
+
+      applyScope();
+    });
+  }
+
+  /** Apply the current filter to what is on screen. Called after every render, because a
+   *  new page arrives unfiltered. */
+  function applyScope(): void {
+    for (const item of list.querySelectorAll<HTMLElement>('.activity__item')) {
+      item.hidden = scope === 'inbound' && item.dataset.inbound !== 'true';
+    }
+
+    markLead();
+  }
+
+  /** Mark the first row still on screen, so the separator above it is not drawn. */
+  function markLead(): void {
+    let first = true;
+
+    for (const item of list.querySelectorAll<HTMLElement>('.activity__item')) {
+      item.classList.toggle('activity__item--lead', first && !item.hidden);
+      if (!item.hidden) first = false;
+    }
+  }
+</script>
+
+<style>
+  .activity__new-count {
+    margin-block-end: var(--space-lg);
+    font-size: var(--size-1);
+    letter-spacing: var(--tracking-wide);
+    color: var(--accent);
+  }
+
+  .activity__filter {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2xs);
+    margin-block-end: var(--space-lg);
+  }
+
+  /* A two-state control rather than a link pair: the filter changes what is on the page
+     rather than where you are, so it is a button and says so to a screen reader through
+     aria-pressed. */
+  .pill {
+    padding: var(--space-3xs) var(--space-sm);
+    border: var(--border);
+    border-radius: 0;
+    background: none;
+    font-family: var(--font-mono);
+    font-size: var(--size-0);
+    letter-spacing: var(--tracking-wide);
+    color: var(--ink-muted);
+    cursor: pointer;
+  }
+
+  .pill--on {
+    border-color: var(--ink);
+    color: var(--ink);
+  }
+
+  .activity {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* Every row carries its own separator and the first visible one drops it, rather than the
+     `+` selector this wanted to be. The filter hides rows with [hidden], and an adjacent
+     sibling combinator does not skip a hidden element: with `+`, hiding the first row leaves
+     its separator drawn above the second, which is a rule attached to nothing. `--lead` is
+     set in script whenever the filter changes, which is the only moment it can be known. */
+  .activity__item {
+    margin-block-start: var(--space-md);
+    padding-block-start: var(--space-md);
+    border-block-start: var(--border);
+  }
+
+  .activity__item--lead {
+    margin-block-start: 0;
+    padding-block-start: 0;
+    border-block-start: 0;
+  }
+
+  /* The one place a row is marked out. A rule in the accent down the inside edge, the same
+     device the moderator's note on the account page uses for "this is the site speaking to
+     you" — which is exactly what a notification is. */
+  .activity__item--new {
+    padding-inline-start: var(--space-sm);
+    border-inline-start: var(--border-width-thick) solid var(--accent);
+  }
+
+  .activity__text {
+    text-wrap: pretty;
+  }
+
+  .activity__label {
+    display: block;
+    margin-block-start: var(--space-3xs);
+    font-family: var(--font-serif);
+    font-size: var(--size-4);
+    line-height: var(--leading-tight);
+    text-wrap: balance;
+  }
+
+  .activity__when {
+    margin-block-start: var(--space-2xs);
+    font-size: var(--size-1);
+    letter-spacing: var(--tracking-wide);
+    color: var(--ink-muted);
+  }
+
+  /* Never the only marker: the row already carries the accent rule, and the count above the
+     list says how many there are. Colour is a third cue here, not the carrier. */
+  .activity__new {
+    margin-inline-start: var(--space-2xs);
+    color: var(--accent);
+  }
+</style>

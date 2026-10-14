@@ -1,0 +1,89 @@
+---
+/**
+ * Signing out.
+ *
+ * A real page rather than a link that quietly does something. Two reasons: GitHub Pages
+ * has no SPA fallback, so every destination has to exist as a file anyway, and an action
+ * that ends a session should say plainly that it happened rather than dropping someone
+ * back on the home page to work it out from a changed menu.
+ *
+ * It signs out on load rather than asking for confirmation. Nothing is lost by signing
+ * out, and a confirmation step for a harmless, instantly reversible action is friction
+ * that teaches people to click through dialogs.
+ */
+import Account from '../../layouts/Account.astro';
+import FormStatus from '../../components/FormStatus.astro';
+import { path } from '../../lib/paths';
+---
+
+<Account
+  title="Sign out"
+  description="End this browser's session."
+  gate="none"
+>
+  <FormStatus id="sign-out-status" />
+
+  <div class="actions" data-links hidden>
+    <a class="button button--primary" href={path('/')}>Back to the site</a>
+    <a class="button" href={path('/account/sign-in/')}>Sign in again</a>
+  </div>
+</Account>
+
+<script>
+  import { signOut } from '../../lib/auth';
+  import { clearActivityHint } from '../../lib/activity-hint';
+  import { clearModHint } from '../../lib/mod-hint';
+  import { startSession, subscribeToSession } from '../../lib/session';
+  import { query, showStatus } from '../../lib/forms';
+
+  const status = query<HTMLElement>('#sign-out-status');
+  const links = query<HTMLElement>('[data-links]');
+
+  let done = false;
+
+  // Wait for the store to settle before acting, so that "you were not signed in anyway"
+  // and "you are now signed out" are told apart rather than guessed at. The layout starts
+  // the store too; startSession is idempotent.
+  subscribeToSession(async (state) => {
+    if (done || state.status === 'loading') return;
+
+    if (state.status === 'unavailable') {
+      // The layout is already showing its own panel for this. Nothing to add.
+      done = true;
+      return;
+    }
+
+    if (state.status === 'signed-out') {
+      done = true;
+      showStatus(status, 'notice', 'You are signed out. Nothing on this browser is signed in.');
+      links.hidden = false;
+      return;
+    }
+
+    done = true;
+
+    // Both hints go before the sign-out rather than after it, so a sign-out that fails
+    // still leaves nothing behind. They are facts about a person cached on a machine that
+    // may be shared, and the header reads them on every page — a stale moderation link or
+    // a count of somebody else's notifications is the sort of thing the privacy notice
+    // should not have to explain away.
+    clearActivityHint();
+    clearModHint();
+
+    const result = await signOut();
+
+    if (!result.ok) {
+      showStatus(status, 'error', result.message);
+      links.hidden = false;
+      return;
+    }
+
+    showStatus(status, 'success', [
+      'Signed out on this browser.',
+      'Anything you posted stays where it is. Sessions on your other devices are untouched.',
+    ]);
+    links.hidden = false;
+  });
+
+  void startSession();
+</script>

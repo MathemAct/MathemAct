@@ -1,0 +1,54 @@
+[
+  {
+    "id": "a327f6a2-4840-465c-ac9f-c0e136fc0c08",
+    "parentType": "claim",
+    "parentId": "e5b0335c-06eb-47d0-a515-f8d080c021b7",
+    "inReplyTo": null,
+    "body": "yay",
+    "createdAt": "2026-08-18T10:07:43.698Z",
+    "updatedAt": "2026-10-11T22:21:56.873Z",
+    "deletedAt": null,
+    "agreementScore": null,
+    "supersededBy": null,
+    "supersedesEarlier": false,
+    "endorsedAt": "2026-10-11T22:21:56.873Z",
+    "endorsements": {
+      "capturesMyView": 0,
+      "agreePositionNotReason": 0
+    },
+    "author": {
+      "id": "acef3dbd-202c-47fa-806a-3c32522f315e",
+      "displayName": "Anna Zanoli",
+      "isPseudonym": false,
+      "institution": {
+        "name": "Institute of Science and Technology Austria",
+        "country": "Austria",
+        "verifiedAt": "2026-08-17T10:39:33.352Z"
+      }
+    }
+  },
+  {
+    "id": "4cc7dbc8-cbd0-49c3-9512-efbb1c79ebab",
+    "parentType": "claim",
+    "parentId": "e5b0335c-06eb-47d0-a515-f8d080c021b7",
+    "inReplyTo": null,
+    "body": "Agreed, I've used AI as a reading assistant and found it useful. The suggestions that \"reading papers is a good testing ground for the value of the model\" is interesting: I wonder, do any existing LLM evaluation benchmarks feature this kind of test?",
+    "createdAt": "2026-10-11T19:23:26.327Z",
+    "updatedAt": "2026-10-11T19:23:26.327Z",
+    "deletedAt": null,
+    "agreementScore": 10,
+    "supersededBy": null,
+    "supersedesEarlier": false,
+    "endorsedAt": null,
+    "endorsements": {
+      "capturesMyView": 0,
+      "agreePositionNotReason": 0
+    },
+    "author": {
+      "id": "1bfffb42-711c-4d92-9e28-cb7cc1fc4eb6",
+      "displayName": "AdminEmma",
+      "isPseudonym": true,
+      "institution": null
+    }
+  }
+]

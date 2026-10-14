@@ -1,0 +1,130 @@
+---
+/**
+ * One report in a listing.
+ *
+ * Built to be skimmed the way a researcher skims a table of contents: the tombstone and
+ * outcome first, then the title, then the facts that decide whether to open it — which
+ * tools, how long ago, what area. The aim is quoted rather than the method, because "what
+ * were they trying to do" is the question a skimmer is actually answering.
+ *
+ * The whole card is not a link. A card-sized click target swallows the tool and tag links
+ * inside it, and a screen reader announces the entire card as one enormous link name. The
+ * title is the link; the card is a container.
+ *
+ * Every value that a machine could parse — tool, version, date, tag code — is in mono,
+ * which is what this site uses to say so.
+ */
+import StalenessNote from './StalenessNote.astro';
+import { path } from '../lib/paths';
+import { areaLabel, taskTypeLabel } from '../lib/report-schema';
+import { hasRunnableReference, recencyBands, sortValue, timeBand } from '../lib/report-facets';
+import type { Report } from '../lib/reports';
+
+interface Props {
+  report: Report;
+  /** Author pages already say whose work this is. */
+  showAuthor?: boolean;
+  /** Confirmations + comments + citations. Used for popularity sort. */
+  interactionCount?: number;
+}
+
+const { report, showAuthor = true, interactionCount } = Astro.props;
+const interactions = interactionCount ?? report.staleness.confirmationCount;
+
+// Data attributes drive the listing's filtering and sorting, which run in the browser over
+// already-rendered cards. Keeping the filterable values on the element means the filter
+// logic never has to re-parse the text a reader is looking at.
+//
+// The derived ones — the recency bands, the time band, the three "has" flags — come from
+// src/lib/report-facets.ts, which the freshness overlay also calls. A card built by the
+// overlay with a bucket computed a second way is a card that quietly fails a filter it
+// should match.
+const toolNames = [...new Set(report.tools.map((tool) => tool.name.trim().toLowerCase()))];
+const tagCodes = report.tags.map((tag) => tag.code);
+
+// Primary and secondary together: the task filter asks "did this session do X", and a
+// session whose second task was proof drafting did proof drafting.
+const tasks = [report.taskType, ...report.taskSecondary];
+const bands = recencyBands(report.staleness.latestToolUse, new Date());
+
+// The three toggles are one attribute and one filter dimension, and that dimension is AND'd
+// rather than OR'd — "has prompts" and "has code" together means both, which is the question
+// somebody ticking two of them is asking. Every other dimension ORs within itself.
+const has = [
+  report.prompts ? 'prompts' : null,
+  report.transcriptExcerpt ? 'transcript' : null,
+  hasRunnableReference(report.references.map((reference) => reference.kind)) ? 'code' : null,
+].filter((flag) => flag !== null);
+---
+
+<article
+  class="card"
+  data-report
+  data-area={report.area}
+  data-task-type={report.taskType}
+  data-tasks={tasks.join('|')}
+  data-outcome={report.outcome}
+  data-tools={toolNames.join('|')}
+  data-tags={tagCodes.join('|')}
+  data-career={report.careerStage ?? ''}
+  data-generalises={report.generalises ?? ''}
+  data-recency={bands.join('|')}
+  data-time={timeBand(report.timeSpentMinutes)}
+  data-has={has.join('|')}
+  data-helpfulness={sortValue(report.ratings.rating_helpfulness)}
+  data-effort={sortValue(report.ratings.rating_verification_effort)}
+  data-novelty={sortValue(report.ratings.rating_novelty)}
+  data-created={report.createdAt}
+  data-confirmed={report.staleness.latestConfirmationAt ?? ''}
+  data-confirmations={report.staleness.confirmationCount}
+  data-interactions={interactions}
+>
+  <div class="card__status">
+    <StalenessNote staleness={report.staleness} outcome={report.outcome} />
+  </div>
+
+  <h3 class="card__title">
+    <a href={path(`/reports/${report.id}/`)}>{report.title}</a>
+  </h3>
+
+  <p class="card__aim">{report.aim}</p>
+
+  <ul class="card__facts" role="list">
+    <li>{areaLabel(report.area)}</li>
+    <li>{taskTypeLabel(report.taskType)}</li>
+    {
+      showAuthor && (
+        <li>
+          {report.author ? (
+            <a href={path(`/authors/${report.author.id}/`)}>{report.author.displayName}</a>
+          ) : (
+            <span class="card__erased">Author since erased</span>
+          )}
+        </li>
+      )
+    }
+  </ul>
+
+  <ul class="card__tools" role="list">
+    {
+      report.tools.map((tool) => (
+        <li class="tool-chip">
+          <span class="tool-chip__name">{tool.name}</span>
+          <span class="tool-chip__version">{tool.version}</span>
+        </li>
+      ))
+    }
+    {
+      report.tags.map((tag) => (
+        <li class="tool-chip tool-chip--tag">
+          <span class="tool-chip__name">{tag.code}</span>
+        </li>
+      ))
+    }
+  </ul>
+</article>
+
+{/* No scoped styles. `.card__facts` and the tool chips are used by the report page as
+    well as by this component, and a scoped block would style them here and leave them bare
+    there — Astro's scope attribute belongs to the file that authored the element. They live
+    in src/styles/corpus.css, which both pages import. */}

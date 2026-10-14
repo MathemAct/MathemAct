@@ -1,0 +1,533 @@
+---
+/**
+ * Client-rendered report viewer for reports that do not yet have a static page.
+ *
+ * Reports are exported nightly and built into static pages at /reports/<id>/. Between
+ * the export and the next build, a report that was published that day has no static page.
+ * The freshness overlay on the listing shows those new reports but links them here rather
+ * than to a 404.
+ *
+ * Pattern and rationale: same as /opinions/view/ and /moderate/. One anon fetch
+ * against PostgREST gets the fields the static page would have baked in. The interactive
+ * sections — the staleness-confirmation form and the comment thread — are wired up by
+ * JavaScript after the fetch completes.
+ *
+ * What is omitted relative to the static page:
+ *   - StalenessNote / tombstone glyph: requires the confirmation aggregate from the DB;
+ *     a fresh report has none, so the section would be empty regardless.
+ *   - Related reports: requires the full corpus to be in memory at build time.
+ *   - Institution badges: the author join here omits institution data to keep the query
+ *     small; badges carry a verification date that is not in this query.
+ *   - Citation string / CopyButton: minor; omitted for now.
+ * All of these appear in full on the static page once the build runs.
+ */
+import Base from '../../layouts/Base.astro';
+import CommentThread from '../../components/CommentThread.astro';
+import References from '../../components/References.astro';
+import '../../styles/corpus.css';
+import '../../styles/forms.css';
+import { path } from '../../lib/paths';
+---
+
+<Base title="Report" description="A report submitted to MathemAct.">
+  <div class="shell corpus">
+    <p class="breadcrumb"><a href={path('/reports/')}>← All reports</a></p>
+
+    <div data-loading>
+      <p class="field__hint">Loading…</p>
+    </div>
+
+    <div data-error hidden>
+      <p>This report could not be found, or has been removed.</p>
+      <p><a href={path('/reports/')}>Back to all reports</a></p>
+    </div>
+
+    <div class="report" data-content hidden>
+      <div class="report__body" data-quotable>
+        <span data-pagefind-filter="type:report" hidden></span>
+
+        <header>
+          <h1 data-title></h1>
+
+          <ul class="card__facts report__facts" role="list">
+            <li data-pagefind-filter="area" data-area></li>
+            <li data-area-other hidden></li>
+            <li data-pagefind-filter="task_type" data-task></li>
+            <li data-task-secondary hidden></li>
+            <li><span class="meta" data-date></span></li>
+          </ul>
+        </header>
+
+        <section class="field-block">
+          <span class="field-block__label">Tools used</span>
+          <table class="tools-table">
+            <thead>
+              <tr>
+                <th scope="col">Tool</th>
+                <th scope="col">Version</th>
+                <th scope="col">Date used</th>
+                <th scope="col" data-tools-role-head hidden>What it did</th>
+              </tr>
+            </thead>
+            <tbody data-tools-body></tbody>
+          </table>
+        </section>
+
+        <section class="field-block">
+          <span class="field-block__label">What they were trying to do</span>
+          <p class="field-block__body" data-aim></p>
+        </section>
+
+        <section class="field-block">
+          <span class="field-block__label">What they actually did</span>
+          <p class="field-block__body" data-method></p>
+        </section>
+
+        <section class="field-block" data-prompts-section hidden>
+          <span class="field-block__label">Prompts</span>
+          <div class="verbatim">
+            <div class="verbatim__head">
+            </div>
+            <div class="verbatim__body" data-prompts></div>
+          </div>
+        </section>
+
+        <section class="field-block" data-transcript-section hidden>
+          <span class="field-block__label">Transcript</span>
+          <details class="transcript">
+            <summary class="transcript__summary" data-transcript-summary></summary>
+            <div class="transcript__head">
+              <p class="field__hint">
+                Pasted by the author, who confirmed that other people's unpublished
+                material had been removed.
+              </p>
+            </div>
+            <div class="transcript__body" data-transcript-body></div>
+            <p class="field__hint" data-transcript-link-note hidden>
+              The author also linked to <a data-transcript-link-href rel="nofollow noopener">the original conversation</a>.
+              Share links expire and get revoked, so the excerpt above is the record.
+            </p>
+          </details>
+        </section>
+
+        <section class="field-block field-block--key">
+          <span class="field-block__label">Outcome</span>
+          <p class="field-block__body">
+            <strong data-outcome-label></strong>
+            <span data-outcome-notes></span>
+          </p>
+        </section>
+
+        <section class="field-block">
+          <span class="field-block__label">How this was verified</span>
+          <p class="field-block__body" data-verification></p>
+        </section>
+
+        <section class="field-block" data-caveats-section hidden>
+          <span class="field-block__label">What they would tell someone trying this</span>
+          <p class="field-block__body" data-caveats></p>
+        </section>
+
+        <section class="field-block" data-learned-section hidden>
+          <span class="field-block__label">What they learned</span>
+          <p class="field-block__body"><strong data-learned-answer></strong> <span data-learned-notes></span></p>
+        </section>
+
+        <section class="field-block" data-references-section hidden>
+          <span class="field-block__label">Supporting material</span>
+          <ul class="links" role="list" data-references-list></ul>
+        </section>
+      </div>
+
+      <aside class="aside">
+        <div class="aside__block">
+          <span class="aside__label">Posted by</span>
+          <p data-author-block></p>
+        </div>
+
+        <div class="aside__block" data-tags-block hidden>
+          <span class="aside__label">Subject areas</span>
+          <ul class="card__tools" role="list" data-tags-list></ul>
+        </div>
+
+        <div class="aside__block" data-metadata-block hidden>
+          <span class="aside__label">For counting</span>
+          <dl data-metadata-dl></dl>
+        </div>
+
+      </aside>
+
+      <References incoming={[]} outgoing={[]} />
+
+      <div data-pagefind-ignore>
+        <CommentThread
+          parentType="report"
+          parentId=""
+          nodes={[]}
+          title=""
+          href=""
+        />
+      </div>
+    </div>
+  </div>
+</Base>
+
+<script>
+  import { longDate } from '../../lib/format';
+  import {
+    areaLabel,
+    countedFacts,
+    outcomeLabel,
+    referenceKindLabel,
+    taskTypeLabel,
+  } from '../../lib/report-schema';
+  import type { RatingKey } from '../../lib/report-schema';
+  import { handOverToBuiltPage } from '../../lib/handover';
+  import { path } from '../../lib/paths';
+
+  const params = new URLSearchParams(window.location.search);
+  const id = params.get('id');
+
+  const loadingEl = document.querySelector<HTMLElement>('[data-loading]')!;
+  const errorEl = document.querySelector<HTMLElement>('[data-error]')!;
+  const contentEl = document.querySelector<HTMLElement>('[data-content]')!;
+
+  if (!id) {
+    loadingEl.hidden = true;
+    errorEl.hidden = false;
+  } else if (!(await handOverToBuiltPage(id, path(`/reports/${id}/`)))) {
+    // Still here: the report is newer than the build, so this page renders it.
+    await init(id);
+  }
+
+  async function init(reportId: string): Promise<void> {
+    const report = await fetchReport(reportId);
+
+    if (!report) {
+      loadingEl.hidden = true;
+      errorEl.hidden = false;
+      return;
+    }
+
+    document.title = `${report.title} | MathemAct`;
+
+    setText('[data-title]', report.title);
+    setText('[data-area]', areaLabel(report.area));
+    setText('[data-task]', taskTypeLabel(report.taskType));
+    setText('[data-date]', `Posted ${longDate(report.createdAt)}`);
+
+    setText('[data-outcome-label]', `${outcomeLabel(report.outcome)}.`);
+    setText('[data-outcome-notes]', report.outcomeNotes ?? '');
+    setText('[data-verification]', report.verification);
+    setText('[data-aim]', report.aim);
+    setText('[data-method]', report.method);
+
+    if (report.area === 'other' && report.areaOther) {
+      setText('[data-area-other]', report.areaOther);
+      reveal('[data-area-other]');
+    }
+
+    if (report.taskSecondary.length > 0) {
+      setText(
+        '[data-task-secondary]',
+        `also ${report.taskSecondary.map((task) => taskTypeLabel(task)).join(', ')}`,
+      );
+      reveal('[data-task-secondary]');
+    }
+
+    // The role column appears only when a row has one. A column of empty cells reads as data
+    // that failed to load, which on a page that fetches at runtime is the wrong thing to
+    // suggest.
+    const showRole = report.tools.some((tool) => tool.role);
+    if (showRole) reveal('[data-tools-role-head]');
+
+    const tbody = document.querySelector<HTMLElement>('[data-tools-body]')!;
+    for (const tool of report.tools) {
+      const tr = document.createElement('tr');
+      for (const text of [tool.name, tool.version, tool.usedOn ?? '']) {
+        const td = document.createElement('td');
+        td.textContent = text;
+        tr.appendChild(td);
+      }
+      if (showRole) {
+        const td = document.createElement('td');
+        td.textContent = tool.role ?? '';
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+
+    if (report.prompts) {
+      setText('[data-prompts]', report.prompts);
+      reveal('[data-prompts-section]');
+    }
+
+    if (report.transcriptExcerpt) {
+      const section = document.querySelector<HTMLElement>('[data-transcript-section]')!;
+      const summary = document.querySelector<HTMLElement>('[data-transcript-summary]')!;
+      const body = document.querySelector<HTMLElement>('[data-transcript-body]')!;
+      summary.textContent = `Show the excerpt (${report.transcriptExcerpt.length.toLocaleString('en-GB')} characters)`;
+      body.textContent = report.transcriptExcerpt;
+      if (report.transcriptUrl) {
+        const note = document.querySelector<HTMLElement>('[data-transcript-link-note]')!;
+        const link = document.querySelector<HTMLAnchorElement>('[data-transcript-link-href]')!;
+        link.href = report.transcriptUrl;
+        note.hidden = false;
+      }
+      section.hidden = false;
+    }
+
+    if (report.caveats) {
+      setText('[data-caveats]', report.caveats);
+      const section = document.querySelector<HTMLElement>('[data-caveats-section]')!;
+      section.hidden = false;
+    }
+
+    // Same condition as the static page: the note is only ever stored beside an answer.
+    if (report.learnedNotes && report.learnedSomething !== null) {
+      setText('[data-learned-answer]', report.learnedSomething ? 'Something new.' : 'Nothing new.');
+      setText('[data-learned-notes]', report.learnedNotes);
+      reveal('[data-learned-section]');
+    }
+
+    // Author block.
+    const authorBlock = document.querySelector<HTMLElement>('[data-author-block]')!;
+    if (report.author) {
+      const link = document.createElement('a');
+      // /authors/view/, not /authors/<id>/. Author pages are generated from the corpus, so
+      // the author of a report this new may have no static page yet — this is somebody's
+      // first submission more often than not. The view page reads live and always resolves.
+      link.href = path(`/authors/view/?id=${report.author.id}`);
+      link.textContent = report.author.displayName;
+      authorBlock.appendChild(link);
+      if (report.author.isPseudonym) {
+        const hint = document.createElement('span');
+        hint.className = 'field__hint';
+        hint.textContent = ' — a pseudonym';
+        authorBlock.appendChild(hint);
+      }
+    } else {
+      authorBlock.className = 'field__hint';
+      authorBlock.textContent =
+        'This account has since been erased. The contribution stays in the corpus without a name on it.';
+    }
+
+    // Tags.
+    if (report.tags.length > 0) {
+      const block = document.querySelector<HTMLElement>('[data-tags-block]')!;
+      const list = document.querySelector<HTMLElement>('[data-tags-list]')!;
+      for (const tag of report.tags) {
+        const li = document.createElement('li');
+        li.className = 'tool-chip tool-chip--tag';
+        const a = document.createElement('a');
+        a.href = path(`/reports/?tag=${tag}`);
+        const span = document.createElement('span');
+        span.className = 'tool-chip__name';
+        span.textContent = tag;
+        a.appendChild(span);
+        li.appendChild(a);
+        list.appendChild(li);
+      }
+      block.hidden = false;
+    }
+
+    // Supporting links.
+    if (report.references.length > 0) {
+      const list = document.querySelector<HTMLElement>('[data-references-list]')!;
+      for (const reference of report.references) {
+        const li = document.createElement('li');
+        li.className = 'links__item';
+
+        const kind = document.createElement('span');
+        kind.className = 'links__kind';
+        kind.textContent = referenceKindLabel(reference.kind);
+
+        const link = document.createElement('a');
+        link.href = reference.url;
+        link.rel = 'nofollow noopener';
+        link.textContent = reference.label ?? reference.url;
+
+        li.append(kind, link);
+        list.appendChild(li);
+      }
+      reveal('[data-references-section]');
+    }
+
+    // The structured answers, from the one function that holds their words — the same call
+    // the static page makes, so a reader who arrives here the day something is posted and
+    // again the day after sees the same terms in the same order.
+    const entries = countedFacts(report);
+    if (entries.length > 0) {
+      const block = document.querySelector<HTMLElement>('[data-metadata-block]')!;
+      const dl = document.querySelector<HTMLElement>('[data-metadata-dl]')!;
+      for (const { term, value } of entries) {
+        const dt = document.createElement('dt');
+        dt.textContent = term;
+        const dd = document.createElement('dd');
+        dd.textContent = value;
+        dl.append(dt, dd);
+      }
+      block.hidden = false;
+    }
+
+    // Wire up the comment thread.
+    const thread = document.querySelector<HTMLElement>('[data-thread]')!;
+    thread.dataset.parentId = reportId;
+    thread.dataset.nodeTitle = report.title;
+    thread.dataset.nodeHref = path(`/reports/${reportId}/`);
+    thread.dispatchEvent(new CustomEvent('thread-ready'));
+
+    loadingEl.hidden = true;
+    contentEl.hidden = false;
+  }
+
+  function setText(selector: string, text: string): void {
+    const el = document.querySelector<HTMLElement>(selector);
+    if (el) el.textContent = text;
+  }
+
+  function reveal(selector: string): void {
+    const el = document.querySelector<HTMLElement>(selector);
+    if (el) el.hidden = false;
+  }
+
+  // ── Data fetch ────────────────────────────────────────────────────────────────────────
+
+  interface FetchedReport {
+    readonly id: string;
+    readonly title: string;
+    readonly aim: string;
+    readonly method: string;
+    readonly outcome: 'worked' | 'partial' | 'failed';
+    readonly outcomeNotes: string | null;
+    readonly verification: string;
+    readonly prompts: string | null;
+    readonly transcriptExcerpt: string | null;
+    readonly transcriptUrl: string | null;
+    readonly caveats: string | null;
+    readonly references: readonly { kind: string; url: string; label: string | null }[];
+    readonly area: string;
+    readonly areaOther: string | null;
+    readonly taskType: string;
+    readonly taskSecondary: readonly string[];
+    readonly careerStage: string | null;
+    readonly createdAt: string;
+    readonly timeSpentMinutes: number | null;
+    readonly authorConfidence: number | null;
+    readonly wasPublished: string | null;
+    readonly wasDisclosed: boolean | null;
+    readonly ratings: Readonly<Record<RatingKey, number | null>>;
+    readonly timeSaved: string | null;
+    readonly generalises: string | null;
+    readonly learnedSomething: boolean | null;
+    readonly learnedNotes: string | null;
+    readonly tools: readonly {
+      name: string;
+      version: string;
+      usedOn: string | null;
+      role: string | null;
+    }[];
+    readonly tags: readonly string[];
+    readonly author: {
+      readonly id: string;
+      readonly displayName: string;
+      readonly isPseudonym: boolean;
+    } | null;
+  }
+
+  async function fetchReport(id: string): Promise<FetchedReport | null> {
+    const base = import.meta.env.PUBLIC_SUPABASE_URL as string | undefined;
+    const key = import.meta.env.PUBLIC_SUPABASE_ANON_KEY as string | undefined;
+    if (!base || !key) return null;
+
+    const select = [
+      'id,title,aim,method,outcome,outcome_notes,verification',
+      'prompts,transcript_excerpt,transcript_url,references,caveats',
+      'area,area_other,task_type,task_secondary,career_stage,created_at',
+      'time_spent_minutes,author_confidence,was_published,was_disclosed',
+      'rating_helpfulness,time_saved,rating_trust_before_checking',
+      'rating_verification_effort,rating_novelty,rating_understanding_gained',
+      'generalises,learned_something,learned_notes',
+      'report_tools(tool_name,tool_version,used_on,role)',
+      'report_tags(tags(code))',
+      'author:profiles!reports_author_id_fkey(id,display_name,is_pseudonym)',
+    ].join(',');
+
+    try {
+      const response = await fetch(
+        `${base}/rest/v1/reports` +
+          `?select=${encodeURIComponent(select)}` +
+          `&id=eq.${encodeURIComponent(id)}` +
+          `&status=eq.published&deleted_at=is.null`,
+        { headers: { apikey: key, Authorization: `Bearer ${key}` } },
+      );
+
+      if (!response.ok) return null;
+
+      const rows = await response.json();
+      if (!Array.isArray(rows) || rows.length === 0) return null;
+
+      const row = rows[0];
+      return {
+        id: row.id,
+        title: row.title,
+        aim: row.aim,
+        method: row.method,
+        outcome: row.outcome,
+        outcomeNotes: row.outcome_notes ?? null,
+        verification: row.verification,
+        prompts: row.prompts ?? null,
+        transcriptExcerpt: row.transcript_excerpt ?? null,
+        transcriptUrl: row.transcript_url ?? null,
+        caveats: row.caveats ?? null,
+        references: row.references ?? [],
+        area: row.area,
+        areaOther: row.area_other ?? null,
+        taskType: row.task_type,
+        taskSecondary: row.task_secondary ?? [],
+        careerStage: row.career_stage ?? null,
+        createdAt: row.created_at,
+        timeSpentMinutes: row.time_spent_minutes ?? null,
+        authorConfidence: row.author_confidence ?? null,
+        wasPublished: row.was_published ?? null,
+        wasDisclosed: row.was_disclosed ?? null,
+        ratings: {
+          rating_helpfulness: row.rating_helpfulness ?? null,
+          rating_trust_before_checking: row.rating_trust_before_checking ?? null,
+          rating_verification_effort: row.rating_verification_effort ?? null,
+          rating_novelty: row.rating_novelty ?? null,
+          rating_understanding_gained: row.rating_understanding_gained ?? null,
+        },
+        timeSaved: row.time_saved ?? null,
+        generalises: row.generalises ?? null,
+        learnedSomething: row.learned_something ?? null,
+        learnedNotes: row.learned_notes ?? null,
+        tools: (row.report_tools ?? []).map(
+          (t: {
+            tool_name: string;
+            tool_version: string;
+            used_on: string | null;
+            role: string | null;
+          }) => ({
+            name: t.tool_name,
+            version: t.tool_version,
+            usedOn: t.used_on ?? null,
+            role: t.role ?? null,
+          }),
+        ),
+        tags: (row.report_tags ?? []).flatMap(
+          (link: { tags: { code: string } | null }) => (link.tags ? [link.tags.code] : []),
+        ),
+        author: row.author
+          ? {
+              id: row.author.id,
+              displayName: row.author.display_name,
+              isPseudonym: row.author.is_pseudonym,
+            }
+          : null,
+      };
+    } catch {
+      return null;
+    }
+  }
+</script>

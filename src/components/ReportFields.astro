@@ -1,0 +1,558 @@
+---
+/**
+ * The sixteen sections of a report, once.
+ *
+ * Two pages ask for a report — /reports/new/ and /account/edit-submission/ — and until
+ * schema version 2 they each carried their own copy of the whole form. That was survivable
+ * at twelve sections of plain fields and stops being survivable the moment the form has
+ * conditional scales in it: a rule written twice is a rule that will disagree with itself,
+ * and the disagreement here would be silent. A scale shown on one page and not the other
+ * stores a number against a question the author never saw on the other.
+ *
+ * So the markup is here and the behaviour is in src/lib/report-form.ts, and the two pages
+ * hold only what genuinely differs: a draft and a duplicate check on one, a moderator's
+ * explanation and a different button on the other.
+ *
+ * Section order is the reporting standard's order, which is why it is not obviously the most
+ * comfortable order to fill in. Two placements are deliberate and worth defending:
+ *
+ *   **The ratings come last**, after the narrative. Numbers given before you have written
+ *   the account are guesses; numbers given after are recollections.
+ *
+ *   **Prompts and Transcript are separate sections.** They are different artefacts with
+ *   different uses — a prompt is short, reusable, and is what a reader copies; a transcript
+ *   is long, one-off, and is evidence nobody reads except to check a claim. One box for both
+ *   buries the prompt where it can be neither indexed nor shown in a listing.
+ */
+import Field from './Field.astro';
+import FormSection from './FormSection.astro';
+import OutcomeChoice from './OutcomeChoice.astro';
+import ReferenceRows from './ReferenceRows.astro';
+import Scale from './Scale.astro';
+import TagPicker from './TagPicker.astro';
+import ToolRows from './ToolRows.astro';
+import {
+  AREAS,
+  CAREER_STAGES,
+  FIELD_COPY,
+  GENERALISATIONS,
+  RATING_SCALES,
+  REPORT_LIMITS,
+  TASK_TYPES,
+  TIME_SAVED,
+} from '../lib/report-schema';
+import { LICENCE } from '../lib/site';
+
+const conditional = RATING_SCALES.filter((scale) => scale.when);
+const unconditional = RATING_SCALES.filter((scale) => !scale.when);
+---
+
+<FormSection id="title" number={1} title="Title">
+  <Field
+    id="title"
+    label="One line saying what you did"
+    required
+    maxlength={REPORT_LIMITS.title}
+    counter
+    example={FIELD_COPY.title.example}
+  />
+</FormSection>
+
+{/* /reports/new/ puts its near-duplicate warning here, between the title and the area:
+    it is triggered by the title and the aim, and it belongs next to the field that
+    produced it rather than at the foot of the page. */}
+<slot name="after-title" />
+
+<FormSection id="area" number={2} title="Area" lead="How you would classify the work you were doing.">
+  <fieldset class="choices">
+    <legend class="visually-hidden">What kind of work was this</legend>
+    {
+      AREAS.map((choice) => (
+        <label class="choice" for={`area-${choice.value}`}>
+          <input
+            class="choice__input"
+            type="radio"
+            id={`area-${choice.value}`}
+            name="area"
+            value={choice.value}
+          />
+          <span>{choice.label}</span>
+          <span class="choice__hint">{choice.hint}</span>
+        </label>
+      ))
+    }
+  </fieldset>
+  <p class="field__error" id="area-error" hidden></p>
+
+  {/* Required exactly when the area is `other`, which is the only way "other" means
+      anything: an unqualified `other` is a row that has opted out of the axis. Hidden
+      rather than disabled — a disabled control that never becomes enabled reads as
+      broken. */}
+  <div data-area-other hidden>
+    <Field
+      id="area_other"
+      label="Say which"
+      maxlength={REPORT_LIMITS.areaOther}
+      hint="A few words. It is what stops “other” from meaning nothing."
+    />
+  </div>
+</FormSection>
+
+<FormSection
+  id="task-type"
+  number={3}
+  title="Task type"
+  lead="What the tool was asked to do."
+>
+  <fieldset class="choices">
+    <legend class="visually-hidden">What the tool was asked to do</legend>
+    {
+      TASK_TYPES.map((choice) => (
+        <label class="choice" for={`task-${choice.value}`}>
+          <input
+            class="choice__input"
+            type="radio"
+            id={`task-${choice.value}`}
+            name="task_type"
+            value={choice.value}
+          />
+          <span>{choice.label}</span>
+          <span class="choice__hint">{choice.hint}</span>
+        </label>
+      ))
+    }
+  </fieldset>
+  <p class="field__error" id="task_type-error" hidden></p>
+
+  {/* The primary is what the corpus groups by; this is what stops a session that drafted
+      *and* checked a proof from having to pick one and lose the other. Whichever option is
+      the primary is disabled here by script, because "also proof drafting" on a report
+      whose task type is proof drafting is not a second answer. */}
+  <fieldset class="choices choices--compact" data-task-secondary>
+    <legend class="field__label">
+      Anything else it was asked to do <span class="field__optional">optional</span>
+    </legend>
+    <p class="field__hint" id="task_secondary-hint">
+      In the same session. Up to {REPORT_LIMITS.taskSecondary}.
+    </p>
+    {
+      TASK_TYPES.map((choice) => (
+        <label class="choice choice--compact" for={`task2-${choice.value}`}>
+          <input
+            class="choice__input"
+            type="checkbox"
+            id={`task2-${choice.value}`}
+            name="task_secondary"
+            value={choice.value}
+            aria-describedby="task_secondary-hint"
+          />
+          <span>{choice.label}</span>
+        </label>
+      ))
+    }
+  </fieldset>
+  <p class="field__error" id="task_secondary-error" hidden></p>
+</FormSection>
+
+<FormSection
+  id="tools"
+  number={4}
+  title="Tools used"
+  lead="Type any tool name — the suggestions are common choices, not a fixed list."
+>
+  <ToolRows />
+</FormSection>
+
+<FormSection
+  id="about-you"
+  number={5}
+  title="About you"
+  optional
+  lead="Your career stage. You can skip it if it would identify you."
+>
+  <div class="field">
+    <label class="field__label visually-hidden" for="career_stage">
+      Career stage
+    </label>
+    <select
+      class="field__control field__control--narrow"
+      id="career_stage"
+      name="career_stage"
+    >
+      <option value="">Not saying</option>
+      {CAREER_STAGES.map((stage) => <option value={stage.value}>{stage.label}</option>)}
+    </select>
+  </div>
+</FormSection>
+
+<FormSection id="aim" number={6} title="What you were trying to do">
+  <Field
+    id="aim"
+    label="The problem, in a few sentences"
+    type="textarea"
+    required
+    rows={4}
+    maxlength={REPORT_LIMITS.aim}
+    counter
+    example={FIELD_COPY.aim.example}
+  />
+</FormSection>
+
+<FormSection id="method" number={7} title="What you actually did">
+  <Field
+    id="method"
+    label="Stepwise"
+    type="textarea"
+    required
+    rows={10}
+    maxlength={REPORT_LIMITS.method}
+    counter
+    example={FIELD_COPY.method.example}
+  />
+</FormSection>
+
+<FormSection id="outcome" number={8} title="Outcome">
+  <OutcomeChoice name="outcome" />
+  <p class="field__error" id="outcome-error" hidden></p>
+
+  <Field
+    id="outcome_notes"
+    label="What happened"
+    type="textarea"
+    required
+    rows={5}
+    maxlength={REPORT_LIMITS.outcomeNotes}
+    counter
+    example={FIELD_COPY.outcomeNotes.example}
+  />
+</FormSection>
+
+<FormSection id="verification" number={9} title="How you verified correctness">
+  <Field
+    id="verification"
+    label="How you checked"
+    type="textarea"
+    required
+    rows={6}
+    maxlength={REPORT_LIMITS.verification}
+    counter
+    example={FIELD_COPY.verification.example}
+  >
+    <Fragment slot="hint">
+      <p>{FIELD_COPY.verification.hint}</p>
+      <p>
+        If the answer is that you did not check, say so.
+      </p>
+    </Fragment>
+  </Field>
+</FormSection>
+
+<FormSection
+  id="prompts"
+  number={10}
+  title="Prompts"
+  optional
+  lead="One per line, or separated by a blank line. Include the failed ones."
+>
+  <Field
+    id="prompts"
+    label="Prompts"
+    labelClass="visually-hidden"
+    type="textarea"
+    rows={6}
+    maxlength={REPORT_LIMITS.prompts}
+    counter
+    example={FIELD_COPY.prompts.example}
+  />
+</FormSection>
+
+<FormSection
+  id="transcript"
+  number={11}
+  title="Transcript"
+  optional
+  lead="The excerpt is the record. A share link is supplementary."
+>
+  <Field
+    id="transcript_excerpt"
+    label="Paste the part that matters"
+    type="textarea"
+    rows={8}
+    maxlength={REPORT_LIMITS.transcriptExcerpt}
+    counter
+  />
+
+  <Field
+    id="transcript_url"
+    label="Share link"
+    type="text"
+    maxlength={REPORT_LIMITS.transcriptUrl}
+  />
+
+  {/* Shown when there is something pasted — a transcript or a prompt — and hidden when
+      there is not. It used to be required unconditionally, which read as the stronger rule
+      and is the weaker one: a tick every submission needs carries no information and
+      teaches people to tick it without re-reading what they pasted. */}
+  <div class="checkbox" data-rights hidden>
+    <input
+      class="checkbox__input"
+      type="checkbox"
+      id="third_party_confirmed"
+      name="third_party_confirmed"
+    />
+    <label class="checkbox__label" for="third_party_confirmed">
+      I have removed other people's unpublished material from what I pasted
+    </label>
+    <p class="field__error" id="third_party_confirmed-error" hidden></p>
+  </div>
+</FormSection>
+
+<FormSection
+  id="caveats"
+  number={12}
+  title="What you would tell someone trying this"
+  optional
+>
+  <Field
+    id="caveats"
+    label="What you would do differently"
+    type="textarea"
+    rows={4}
+    maxlength={REPORT_LIMITS.caveats}
+    counter
+    example={FIELD_COPY.caveats.example}
+  />
+</FormSection>
+
+<FormSection id="tags" number={13} title="Subject areas" optional>
+  <TagPicker />
+</FormSection>
+
+<FormSection
+  id="references"
+  number={14}
+  title="Supporting material"
+  optional
+  lead="Anything a reader would need to follow this up."
+>
+  <ReferenceRows />
+</FormSection>
+
+<FormSection
+  id="counting"
+  number={15}
+  title="So this can be counted"
+  optional
+>
+  <Field
+    id="time_spent_minutes"
+    label="Time spent, in minutes"
+    type="text"
+    hint="Your estimate - counting the checking, not only the asking."
+  />
+
+  <fieldset class="choices">
+    <legend class="field__label">Did this work end up published? <span class="field__optional">optional</span></legend>
+    <label class="choice" for="published-yes">
+      <input class="choice__input" type="radio" id="published-yes" name="was_published" value="yes" />
+      <span>Yes</span>
+    </label>
+    <label class="choice" for="published-not_yet">
+      <input class="choice__input" type="radio" id="published-not_yet" name="was_published" value="not_yet" />
+      <span>Not yet</span>
+    </label>
+    <label class="choice" for="published-no">
+      <input class="choice__input" type="radio" id="published-no" name="was_published" value="no" />
+      <span>No, and I do not expect it to be</span>
+    </label>
+    <label class="choice" for="published-not_applicable">
+      <input class="choice__input" type="radio" id="published-not_applicable" name="was_published" value="not_applicable" />
+      <span>Not applicable</span>
+    </label>
+  </fieldset>
+
+  {/* Only meaningful once something is published, and the database says so too:
+      reports_disclosure_needs_publication refuses a disclosure answer without a
+      publication. */}
+  <fieldset class="choices" data-disclosure hidden>
+    <legend class="field__label">Was the AI use disclosed in the paper?</legend>
+    <label class="choice" for="disclosed-yes">
+      <input class="choice__input" type="radio" id="disclosed-yes" name="was_disclosed" value="yes" />
+      <span>Yes</span>
+    </label>
+    <label class="choice" for="disclosed-no">
+      <input class="choice__input" type="radio" id="disclosed-no" name="was_disclosed" value="no" />
+      <span>No</span>
+    </label>
+    <label class="choice" for="disclosed-none">
+      <input
+        class="choice__input"
+        type="radio"
+        id="disclosed-none"
+        name="was_disclosed"
+        value=""
+        checked
+      />
+      <span>I would rather not say</span>
+    </label>
+  </fieldset>
+
+  <div class="scales">
+    {
+      unconditional.map((scale) => (
+        <div class="scales__row">
+          <Scale name={scale.key} prompt={scale.prompt} low={scale.low} high={scale.high} />
+        </div>
+      ))
+    }
+
+    {/* The two conditional scales. Novelty is meaningless for a teaching-prep session and
+        understanding gained is meaningless for a literature search, and seven rows of
+        radios is an invitation to straight-line the lot. They sit at the end of the block
+        so that appearing moves nothing above them, and the live region says what appeared
+        rather than leaving a screen reader to discover it by arrowing past. */}
+    <div data-conditional-scales aria-live="polite">
+      {
+        conditional.map((scale) => (
+          <div class="scales__row scales__row--conditional" data-scale={scale.key} hidden>
+            <Scale name={scale.key} prompt={scale.prompt} low={scale.low} high={scale.high} />
+          </div>
+        ))
+      }
+    </div>
+
+    <div class="scales__row">
+      <Scale
+        name="author_confidence"
+        prompt="How confident are you in the result?"
+        low="no confidence"
+        high="complete confidence"
+      />
+    </div>
+  </div>
+
+  <fieldset class="choices">
+    <legend class="field__label">
+      How much time did it save you? <span class="field__optional">optional</span>
+    </legend>
+    {
+      TIME_SAVED.map((choice) => (
+        <label class="choice" for={`time_saved-${choice.value}`}>
+          <input
+            class="choice__input"
+            type="radio"
+            id={`time_saved-${choice.value}`}
+            name="time_saved"
+            value={choice.value}
+          />
+          <span>{choice.label}</span>
+        </label>
+      ))
+    }
+  </fieldset>
+
+  <fieldset class="choices" data-generalises>
+    <legend class="field__label">
+      How far do you think this carries? <span class="field__optional">optional</span>
+    </legend>
+    {
+      GENERALISATIONS.map((choice) => (
+        <label class="choice" for={`generalises-${choice.value}`}>
+          <input
+            class="choice__input"
+            type="radio"
+            id={`generalises-${choice.value}`}
+            name="generalises"
+            value={choice.value}
+            aria-describedby="generalises-hint"
+          />
+          <span>{choice.label}</span>
+        </label>
+      ))
+    }
+  </fieldset>
+</FormSection>
+
+{/* Last, so nothing above it was renumbered. Asked of every outcome: a failed attempt that
+    taught something answers yes like any other. Radios with nothing selected on load, as for
+    the scales -- two checkboxes could both be ticked and could not tell "no" from "did not
+    answer". The note is always visible; the form asks for the answer first and the database
+    refuses a note without one (reports_learned_notes_need_an_answer). */}
+<FormSection id="learned" number={16} title="What you learned" optional>
+  <fieldset class="choices" data-learned>
+    <legend class="field__label">
+      Did you learn something new? <span class="field__optional">optional</span>
+    </legend>
+    <p class="field__hint" id="learned-hint">{FIELD_COPY.learned.hint}</p>
+    <label class="choice" for="learned-yes">
+      <input
+        class="choice__input"
+        type="radio"
+        id="learned-yes"
+        name="learned_something"
+        value="yes"
+        aria-describedby="learned-hint"
+      />
+      <span>Yes</span>
+    </label>
+    <label class="choice" for="learned-no">
+      <input
+        class="choice__input"
+        type="radio"
+        id="learned-no"
+        name="learned_something"
+        value="no"
+        aria-describedby="learned-hint"
+      />
+      <span>No</span>
+    </label>
+  </fieldset>
+
+  <Field
+    id="learned_notes"
+    label="Say more"
+    type="textarea"
+    rows={4}
+    maxlength={REPORT_LIMITS.learnedNotes}
+    counter
+    example={FIELD_COPY.learned.example}
+  />
+</FormSection>
+
+<style>
+  .scales {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+  }
+
+  .scales__row {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2xs);
+  }
+
+  /* Reveal rather than jump. The row is below everything it depends on, so nothing above it
+     moves; the animation is there so the change is noticed at all, and it is off for anybody
+     who has asked for less motion. */
+  .scales__row--conditional {
+    animation: reveal 220ms ease-out;
+  }
+
+  @keyframes reveal {
+    from {
+      opacity: 0;
+      transform: translateY(-0.25rem);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .scales__row--conditional {
+      animation: none;
+    }
+  }
+
+  .scales__aside {
+    margin-inline-start: 0;
+  }
+</style>

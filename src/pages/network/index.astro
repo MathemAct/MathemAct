@@ -1,0 +1,439 @@
+---
+/**
+ * Entry listing, filterable by category.
+ *
+ * Unreachable entries (link_status = 'unreachable') are always shown — never silently
+ * hidden — but sorted last and visibly marked. A broken link is a fact in the corpus.
+ * `unreachableLast` in src/lib/listings.ts holds that ordering ahead of whatever sort the
+ * reader picks, and the build emits the cards in the same order so the pre-script render
+ * agrees with the post-script one.
+ *
+ * Static build from data/network.json (written nightly by scripts/export.mjs).
+ *
+ * The rail, the count, the sort and the chips are `src/components/Listing.astro`, shared
+ * with /reports/ and /network/. What stood here before was a radio group with an Apply
+ * button that submitted a GET to a static host, so it reloaded the page and filtered
+ * nothing without JS and duplicated the JS path with it — and its `.listing__filters`,
+ * `.filter-set` and `.filter-chip` classes were only ever styled inside `search.astro`'s
+ * *scoped* block, so on this page they matched nothing and the whole rail rendered bare.
+ */
+import Base from '../../layouts/Base.astro';
+import Badges from '../../components/Badges.astro';
+import Listing from '../../components/Listing.astro';
+import '../../styles/corpus.css';
+import '../../styles/forms.css';
+import { exportedAt } from '../../lib/manifest';
+import { path } from '../../lib/paths';
+import { CATEGORIES, categoryLabel, listNetwork } from '../../lib/network';
+import type { NetworkCategory } from '../../lib/network';
+import { ENTRY_DIMENSIONS, ENTRY_NOUN, ENTRY_SORTS, groupsFor } from '../../lib/listings';
+
+const all = listNetwork();
+
+const usedCategories = new Set(all.map((r) => r.category));
+
+const groups = groupsFor(ENTRY_DIMENSIONS, {
+  category: CATEGORIES.filter((c) => usedCategories.has(c.value)).map((c) => ({
+    value: c.value,
+    label: c.label,
+  })),
+});
+
+/** Reachable first, then unreachable, newest first within each group. The engine reasserts
+ *  this the moment it runs; doing it here as well means the page is not briefly wrong. */
+const ordered = [
+  ...all.filter((r) => r.linkStatus !== 'unreachable'),
+  ...all.filter((r) => r.linkStatus === 'unreachable'),
+].sort((a, b) =>
+  a.linkStatus === b.linkStatus ? b.createdAt.localeCompare(a.createdAt) : 0,
+);
+---
+
+<Base
+  title="Network"
+  description="Community-curated links to AI tools, educational materials, and guidelines for mathematicians."
+>
+  <div class="shell corpus network-corpus" data-corpus data-exported-at={exportedAt() ?? ''}>
+    <header class="corpus__header">
+      <h1>Network</h1>
+      <p class="corpus__lead">
+        Community-curated links to tools, courses, libraries, and guidelines. Moderated
+        before publication.
+      </p>
+    </header>
+
+    <nav class="network-nav" aria-label="Network sections">
+      <a class="network-nav__link network-nav__link--active" href={path('/network/')} aria-current="page">Entries</a>
+      <a class="network-nav__link" href={path('/network/people/')} hidden data-people-link>Find people</a>
+    </nav>
+
+    {/* Above the listing and outside the branch, so it is in the same place whether
+        anything has been published or not. It used to be at the foot of the page, below a
+        list that grows without limit. */}
+    <p class="corpus__action">
+      <a class="button button--primary" href={path('/network/new/')}>Submit an entry</a>
+    </p>
+
+    {/* The submission form sends people here with `?submitted=1`, which nothing used to read,
+        so a successful submission arrived at a listing that said nothing about it. */}
+    <div class="form-status form-status--success" data-submitted-note role="status" hidden>
+      <p>Submitted. It is on the site now, in the list below.</p>
+    </div>
+
+    {/* Rendered whether or not the export had anything in it, so that an entry submitted
+        today is filtered like one from March. On an empty corpus that is every entry on the
+        page: the overlay creates the category fieldset it needs, and corpus.css hides a
+        rail with none yet and closes the grid up behind it. */}
+    <Listing groups={groups} sorts={ENTRY_SORTS} noun={ENTRY_NOUN} total={all.length}>
+      <ul class="entry-list" data-results role="list">
+          {ordered.map((entry) => (
+            <li
+              class="entry-card"
+              data-entry
+              data-category={entry.category}
+              data-created={entry.createdAt}
+              data-title={entry.title}
+              data-unreachable={entry.linkStatus === 'unreachable' ? 'true' : undefined}
+            >
+              <div class="entry-card__head">
+                <a
+                  class="entry-card__title"
+                  href={entry.url}
+                  rel="noopener noreferrer"
+                  target="_blank"
+                >
+                  {entry.title}
+                </a>
+                {entry.linkStatus === 'unreachable' && (
+                  <span class="entry-card__unreachable" title="This link was unreachable at the last monthly check">
+                    Link may be broken
+                  </span>
+                )}
+                {entry.linkStatus === 'redirected' && (
+                  <span class="entry-card__redirected">Redirects</span>
+                )}
+              </div>
+
+              <p class="entry-card__url mono">{entry.urlNormalised}</p>
+
+              <p class="entry-card__description">{entry.description}</p>
+
+              {/* Retired on 2026-08-21 — the description absorbed it. Only the entries
+                  submitted while it was collected still carry one. */}
+              {entry.relevance && <p class="entry-card__relevance">{entry.relevance}</p>}
+
+              <div class="entry-card__meta">
+                <span class="entry-card__category mono">
+                  {categoryLabel(entry.category as NetworkCategory, entry.categoryOther)}
+                </span>
+                {entry.submitter && (
+                  <Fragment>
+                    <span class="entry-card__submitter">
+                      Submitted by{' '}
+                      <a href={path(`/authors/${entry.submitter.id}/`)}>
+                        {entry.submitter.displayName}
+                        {entry.submitter.isPseudonym && ' (a pseudonym)'}
+                      </a>
+                    </span>
+                    {/* Compact, and a sibling rather than a child of the line above. The
+                        full badge block is a bordered card that also states Registered,
+                        which on every row of a list would be the loudest thing on the
+                        page — the same reasoning that gave comment headers this variant.
+                        Outside the span because `.badge-line` is a <p>, which is not
+                        phrasing content and may not sit inside one. */}
+                    <Badges institution={entry.submitter.institution} compact />
+                  </Fragment>
+                )}
+                {!entry.submitter && (
+                  <span class="entry-card__submitter entry-card__erased">
+                    Submitter since erased
+                  </span>
+                )}
+              </div>
+            </li>
+          ))}
+      </ul>
+
+      {all.length === 0 && (
+        <div class="empty" data-empty-state>
+          <p class="empty__heading">No entries have been published yet.</p>
+          <p>
+            The first ones will be the links people already send each other — a proof
+            assistant's manual, a journal's policy, the seminar that is actually worth the
+            hour.
+          </p>
+        </div>
+      )}
+    </Listing>
+
+    {/* Fresh entries link directly to the external URL — no view page needed, because
+        an entry is a pointer to an external thing, not a page on this site. */}
+    <template data-fresh-entry>
+      <li class="entry-card" data-entry data-fresh data-category="" data-created="" data-title="">
+        <p class="card__fresh">
+          <span class="mono">Published <span data-date></span></span>
+        </p>
+        <div class="entry-card__head">
+          <a class="entry-card__title" data-title-link rel="noopener noreferrer" target="_blank"></a>
+        </div>
+        <p class="entry-card__url mono" data-url></p>
+        <p class="entry-card__description" data-description></p>
+        <p class="entry-card__relevance" data-relevance></p>
+        <div class="entry-card__meta">
+          <span class="entry-card__category mono" data-category-label></span>
+        </div>
+      </li>
+    </template>
+  </div>
+</Base>
+
+<script>
+  // Reveal the "Find people" nav link only for signed-in users.
+  void import('../../lib/session-hint').then(({ readSessionHint }) => {
+    if (readSessionHint() === 'in') {
+      document.querySelector('[data-people-link]')?.removeAttribute('hidden');
+    }
+  });
+</script>
+
+<script>
+  /**
+   * The listing, and at the bottom the freshness overlay.
+   *
+   * Filtering, sorting and the address bar are `createListing()` in
+   * src/lib/listing-filters.ts, the same engine /reports/ and /opinions/ run on.
+   */
+  import { createListing } from '../../lib/listing-filters';
+  import { ENTRY_DIMENSIONS, ENTRY_NOUN, ENTRY_SORTS, unreachableLast } from '../../lib/listings';
+  import { categoryLabel } from '../../lib/network';
+  import type { NetworkCategory } from '../../lib/network';
+
+  const listing = createListing({
+    cards: [...document.querySelectorAll<HTMLElement>('[data-results] > [data-entry]')],
+    dimensions: ENTRY_DIMENSIONS,
+    sorts: ENTRY_SORTS,
+    noun: ENTRY_NOUN,
+    primary: unreachableLast,
+    injectLabel: (key, value) =>
+      key === 'category' ? categoryLabel(value as NetworkCategory) : value,
+    // This page filtered on `?cat=` before the shared engine existed. A linkable filter
+    // that stops being linkable is a broken promise rather than a rename, so the old
+    // parameter is still read — it just is not written any more.
+    legacyParams: { cat: 'category' },
+  });
+
+  // ── Arriving from the submission form ─────────────────────────────────────────────────
+  // Said once, then taken out of the address so a reload or a copied link does not say it
+  // again.
+  {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('submitted') === '1') {
+      const note = document.querySelector<HTMLElement>('[data-submitted-note]');
+      if (note) note.hidden = false;
+      url.searchParams.delete('submitted');
+      window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+    }
+  }
+
+  // ── Freshness overlay ─────────────────────────────────────────────────────────────────
+  //
+  // Entries link to external URLs, so fresh cards carry the real link directly — no view
+  // page needed. Everything here fails silently; see src/lib/fresh.ts.
+
+  void (async () => {
+    const since = document.querySelector<HTMLElement>('[data-corpus]')?.dataset.exportedAt;
+    const list = document.querySelector<HTMLElement>('[data-results]');
+    const template = document.querySelector<HTMLTemplateElement>('[data-fresh-entry]');
+
+    if (!since || !list || !template) return;
+
+    const { networkSince } = await import('../../lib/fresh');
+    const { longDate } = await import('../../lib/format');
+
+    const fresh = await networkSince(since);
+    if (fresh.length === 0) return;
+
+    const added: HTMLElement[] = [];
+
+    for (const entry of fresh) {
+      const node = (template.content.cloneNode(true) as DocumentFragment)
+        .firstElementChild as HTMLElement;
+
+      // The attributes the filter and the two sorts read. Nothing this new has been
+      // link-checked, so it is not marked unreachable and sorts with the rest.
+      node.dataset.category = entry.category;
+      node.dataset.created = entry.createdAt;
+      node.dataset.title = entry.title;
+
+      // `data-title-link`, not `data-title`: the <li> carries `data-title` for the A–Z
+      // sort, and a descendant with the same name is one rename away from a sort key
+      // written into the visible link text.
+      const titleEl = node.querySelector<HTMLAnchorElement>('[data-title-link]');
+      if (titleEl) {
+        titleEl.textContent = entry.title;
+        titleEl.href = entry.url;
+      }
+
+      const urlEl = node.querySelector<HTMLElement>('[data-url]');
+      if (urlEl) urlEl.textContent = entry.urlNormalised;
+
+      const descEl = node.querySelector<HTMLElement>('[data-description]');
+      if (descEl) descEl.textContent = entry.description;
+
+      // Removed rather than left empty: the paragraph carries a bottom margin, so an entry
+      // submitted since the field was retired would open a gap under its description.
+      const relEl = node.querySelector<HTMLElement>('[data-relevance]');
+      if (relEl && entry.relevance) relEl.textContent = entry.relevance;
+      else relEl?.remove();
+
+      const catEl = node.querySelector<HTMLElement>('[data-category-label]');
+      if (catEl) {
+        catEl.textContent = categoryLabel(entry.category as NetworkCategory, entry.categoryOther);
+      }
+
+      const dateEl = node.querySelector<HTMLElement>('[data-date]');
+      if (dateEl) dateEl.textContent = longDate(entry.createdAt);
+
+      added.push(node);
+    }
+
+    list.prepend(...added);
+
+    // Filtered, counted and sorted like everything else, and add() offers the category
+    // filter for a value no exported entry has — on an empty corpus, for every category.
+    listing?.add(added);
+
+    const empty = document.querySelector<HTMLElement>('[data-empty-state]');
+    if (empty) empty.hidden = true;
+  })();
+</script>
+
+<style>
+  .network-corpus {
+    padding-block: var(--space-2xl);
+  }
+
+  .network-nav {
+    display: flex;
+    gap: var(--space-sm);
+    margin-block-end: var(--space-lg);
+    border-block-end: var(--border);
+    padding-block-end: var(--space-sm);
+  }
+
+  .network-nav__link {
+    font-family: var(--font-mono);
+    font-size: var(--size-1);
+    letter-spacing: var(--tracking-wide);
+    color: var(--ink-muted);
+    text-decoration: none;
+    padding-block-end: var(--space-2xs);
+    border-block-end: 2px solid transparent;
+    margin-block-end: -1px;
+  }
+
+  .network-nav__link:hover {
+    color: var(--ink);
+  }
+
+  .network-nav__link--active {
+    color: var(--ink);
+    border-block-end-color: var(--accent);
+  }
+
+  .entry-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-lg);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .entry-card {
+    padding: var(--space-md);
+    border: var(--border);
+    border-radius: var(--radius-sm);
+    background-color: var(--surface);
+  }
+
+  .entry-card[data-unreachable='true'] {
+    border-color: var(--outcome-failed);
+    opacity: 0.8;
+  }
+
+  .entry-card__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-2xs) var(--space-sm);
+    margin-block-end: var(--space-3xs);
+  }
+
+  .entry-card__title {
+    font-family: var(--font-serif);
+    font-size: var(--size-4);
+    font-weight: var(--weight-semibold);
+    color: var(--accent-strong);
+  }
+
+  .entry-card__unreachable {
+    font-family: var(--font-mono);
+    font-size: var(--size-1);
+    letter-spacing: var(--tracking-wide);
+    color: var(--outcome-failed);
+    padding: var(--space-3xs) var(--space-2xs);
+    border: 1px solid var(--outcome-failed);
+    border-radius: var(--radius-sm);
+  }
+
+  .entry-card__redirected {
+    font-family: var(--font-mono);
+    font-size: var(--size-1);
+    letter-spacing: var(--tracking-wide);
+    color: var(--ink-muted);
+    padding: var(--space-3xs) var(--space-2xs);
+    border: var(--border);
+    border-radius: var(--radius-sm);
+  }
+
+  .entry-card__url {
+    font-size: var(--size-1);
+    color: var(--ink-muted);
+    margin-block-end: var(--space-xs);
+    word-break: break-all;
+  }
+
+  .entry-card__description {
+    font-size: var(--size-2);
+    line-height: var(--leading-relaxed);
+    margin-block-end: var(--space-xs);
+  }
+
+  .entry-card__relevance {
+    font-size: var(--size-2);
+    line-height: var(--leading-relaxed);
+    color: var(--ink-muted);
+    margin-block-end: var(--space-sm);
+  }
+
+  .entry-card__meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2xs) var(--space-sm);
+    font-size: var(--size-1);
+    color: var(--ink-muted);
+  }
+
+  .entry-card__category {
+    padding: var(--space-3xs) var(--space-2xs);
+    border: var(--border);
+    border-radius: var(--radius-sm);
+    background-color: var(--ground);
+  }
+
+  .entry-card__erased {
+    font-style: italic;
+  }
+</style>

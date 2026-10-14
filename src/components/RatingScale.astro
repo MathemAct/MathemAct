@@ -1,0 +1,214 @@
+---
+/**
+ * The agreement scale: eleven points, plus a way out that is not on it.
+ *
+ * Three rules from CLAUDE.md, implemented literally because each of them changes what the
+ * numbers mean:
+ *
+ *   **0, 5 and 10 are permanently labelled.** Not on hover, not in a legend elsewhere. An
+ *   unlabelled 0 to 10 reads as intensity rather than as a position, and people then
+ *   interpret 0 as "no opinion" — which is a different answer that this scale records
+ *   separately and must not be confused with total disagreement.
+ *
+ *   **"No opinion / outside my expertise" sits apart from the scale**, below it and behind a
+ *   rule, never at either end. At an end it reads as an extreme, which is exactly the
+ *   misreading it exists to prevent: a mathematician who has never opened a proof assistant
+ *   should not be nudged toward 0 on a formalisation question.
+ *
+ *   **A radio group, keyboard operable.** Arrow keys move between points, space selects,
+ *   and the group has one tab stop — which is what a native radio group does and what a
+ *   handful of buttons with click handlers does not.
+ *
+ * Every point is its own radio with a real label, so a screen reader hears "3 of 12,
+ * strongly disagree" rather than a slider position with no anchors.
+ */
+import { NO_OPINION_LABEL, SCALE_ANCHORS, SCALE_POINTS } from '../lib/claims';
+
+interface Props {
+  name: string;
+}
+
+const { name } = Astro.props;
+---
+
+<fieldset class="rating">
+  <legend class="rating__legend">How much do you agree?</legend>
+
+  <div class="rating__scale">
+    {
+      SCALE_POINTS.map((point) => (
+        <label class="rating__point" for={`${name}-${point}`}>
+          <input
+            class="rating__input"
+            type="radio"
+            id={`${name}-${point}`}
+            name={name}
+            value={String(point)}
+          />
+          <span class="rating__number">{point}</span>
+          {/* The anchor is part of the label text, so it is announced with the option
+              rather than sitting nearby as decoration a screen reader never reaches. */}
+          {SCALE_ANCHORS[point] && <span class="rating__anchor">{SCALE_ANCHORS[point]}</span>}
+        </label>
+      ))
+    }
+  </div>
+
+  <div class="rating__aside">
+    <label class="rating__decline" for={`${name}-none`}>
+      <input class="rating__decline-input" type="radio" id={`${name}-none`} name={name} value="none" />
+      <span>{NO_OPINION_LABEL}</span>
+    </label>
+  </div>
+</fieldset>
+
+<style>
+  .rating {
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .rating__legend {
+    padding: 0;
+    font-weight: var(--weight-semibold);
+  }
+
+  .rating__scale {
+    display: grid;
+    grid-template-columns: repeat(11, minmax(0, 1fr));
+    gap: var(--space-3xs);
+    margin-block-start: var(--space-sm);
+  }
+
+  /* Below about 34rem eleven columns are unreadable, so they become a wrapping row of
+     fixed-width points rather than eleven slivers. */
+  @media (max-width: 34rem) {
+    .rating__scale {
+      display: flex;
+      flex-wrap: wrap;
+    }
+
+    .rating__point {
+      flex: 1 1 3.5rem;
+    }
+  }
+
+  .rating__point {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-3xs);
+    cursor: pointer;
+  }
+
+  /* Hidden but present: it is what the keyboard drives, what assistive tech announces, and
+     what the form submits. The visible state lives on the label. */
+  .rating__input,
+  .rating__decline-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  /* Score as plain number; the circle below it is the interactive target. */
+  .rating__number {
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    font-family: var(--font-sans);
+    font-size: var(--size-2);
+    text-align: center;
+  }
+
+  /* The circle indicator, drawn via ::after so the number sits above it. */
+  .rating__number::after {
+    content: '';
+    display: block;
+    width: 0.75rem;
+    height: 0.75rem;
+    margin: var(--space-2xs) auto 0;
+    border: var(--border-width) solid var(--ink-muted);
+    border-radius: 50%;
+    background: var(--surface);
+  }
+
+  /* Selection: filled circle with an inset ring — colour + shape + weight, three
+     independent cues so no single one is the sole carrier of meaning. */
+  .rating__point:has(.rating__input:checked) .rating__number {
+    font-weight: var(--weight-semibold);
+  }
+
+  .rating__point:has(.rating__input:checked) .rating__number::after {
+    border: 3px solid var(--accent-strong);
+    background: var(--accent-strong);
+    box-shadow: inset 0 0 0 2px var(--surface);
+  }
+
+  .rating__point:has(.rating__input:focus-visible) .rating__number::after {
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-offset);
+  }
+
+  .rating__anchor {
+    font-size: var(--size-0);
+    line-height: var(--leading-snug);
+    color: var(--ink-muted);
+    text-align: center;
+    text-wrap: balance;
+  }
+
+  /* Apart from the scale, and visibly so: a rule above it, and outside the grid the eleven
+     points sit in. */
+  .rating__aside {
+    margin-block-start: var(--space-lg);
+    padding-block-start: var(--space-sm);
+    border-block-start: var(--border);
+  }
+
+  /* Styled like a scale point so it reads as one, rather than as a separate button. */
+  .rating__decline {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2xs);
+    cursor: pointer;
+    font-size: var(--size-2);
+  }
+
+  /* Circle for the "no opinion" option, matching the scale points. */
+  .rating__decline::before {
+    content: '';
+    display: inline-block;
+    flex-shrink: 0;
+    width: 0.75rem;
+    height: 0.75rem;
+    border: var(--border-width) solid var(--ink-muted);
+    border-radius: 50%;
+    background: var(--surface);
+  }
+
+  .rating__decline:has(.rating__decline-input:checked) {
+    font-weight: var(--weight-semibold);
+  }
+
+  .rating__decline:has(.rating__decline-input:checked)::before {
+    border: 3px solid var(--accent-strong);
+    background: var(--accent-strong);
+    box-shadow: inset 0 0 0 2px var(--surface);
+  }
+
+  .rating__decline:has(.rating__decline-input:focus-visible) {
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-offset);
+  }
+
+  .rating__decline-hint {
+    margin-block-start: var(--space-2xs);
+    color: var(--ink-muted);
+    font-size: var(--size-2);
+  }
+</style>

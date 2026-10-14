@@ -1,0 +1,169 @@
+---
+/**
+ * One claim on the listing, as a statement with a shape rather than a post with a comment count.
+ *
+ * **This reverses a rule this project held until 2026-08-22**, and the reversal is worth being
+ * explicit about because the old rule was not arbitrary. The opinions listing rendered no
+ * aggregate at all — no count, no median, no share — on the grounds that a figure on a card
+ * tells a reader where the community landed before they have opened the question, which is
+ * exactly what the claim page withholds. `src/lib/listings.ts` still carries the argument.
+ *
+ * What changed is the judgement about which failure is worse. A list of bare sentences gives a
+ * reader no way to choose what to read, so they open whatever is at the top; a claim answered by
+ * four people and a claim that has split ninety look identical, and the section's second most
+ * important flow — understanding where the community stands in about thirty seconds — never
+ * starts. The shape is what makes a claim worth opening.
+ *
+ * The limits that survive from the old rule, and they are the whole of it:
+ *
+ *   **Positions lead.** Never a contribution count, and never the mean. A card is where a
+ *   single number gets mistaken for the finding, and the mean is the number most likely to be
+ *   mistaken for it — on a bimodal claim it reports mild agreement for a community split
+ *   cleanly in two. It appears on the claim page beside the median and the chart, and nowhere
+ *   else.
+ *
+ *   **No ranking figure.** The sparkline has no axes and no numbers, and nothing on the card
+ *   says where it came in under the current sort.
+ *
+ *   **One colour, the accent.** No ramp from disagreement to agreement: a gradient asserts that
+ *   one end is bad on a page whose entire point is that the site takes no position, and it would
+ *   collide with the outcome semantics, which are the only place on this site where red and
+ *   green mean anything.
+ *
+ * A claim the freshness overlay added renders **neither** the sparkline nor the statistics
+ * line. Aggregates are an export-time product, and a zero histogram reads as unanimous
+ * disagreement — the most wrong thing this card could say about a claim nobody has answered yet.
+ *
+ * **The styles are in `src/styles/corpus.css`, not here.** The freshness overlay builds its own
+ * reduced card from a `<template>` in `/opinions/index.astro`, because a template cannot
+ * instantiate a component — and that markup carries the *page's* scope attribute rather than
+ * this component's, so a scoped `.claim-card__statement` here would style the built cards and leave
+ * every fresh one unstyled. Global is the only place both can reach.
+ */
+import { longDate } from '../lib/format';
+import { path } from '../lib/paths';
+import { areaLabel } from '../lib/report-schema';
+import { SCALE_POINTS } from '../lib/claims';
+import type { Claim, ClaimStats } from '../lib/claims';
+
+interface Props {
+  claim: Claim;
+  /** Undefined for a claim the export has no aggregates for, which is what makes the
+   *  sparkline and the statistics line absent rather than zero. */
+  stats?: ClaimStats;
+}
+
+const { claim, stats }: Props = Astro.props;
+
+/**
+ * About two lines of the opening reasoning.
+ *
+ * Cut on a word boundary and only when there is enough to be worth cutting, so a rationale
+ * three characters over does not gain an ellipsis for nothing. Plain text rather than rendered
+ * markdown: a card is not the place to set a formula, and half a rendered formula is worse than
+ * none.
+ */
+const LEAD = 180;
+const rationale = claim.rationale?.trim() ?? '';
+const lead =
+  rationale.length > LEAD + 20
+    ? `${rationale.slice(0, rationale.lastIndexOf(' ', LEAD))}…`
+    : rationale;
+
+const histogram = stats?.histogram;
+/** Bars are a proportion of the tallest column, not of the total — otherwise a distribution
+ *  whose largest group is nine out of ninety is a row of invisible stubs and the shape, which is
+ *  the entire point, is lost. */
+const tallest = histogram ? Math.max(1, ...histogram) : 1;
+
+/** Both counts can be null on an export that predates them; the line drops the parts it does
+ *  not have rather than printing a zero nobody counted. */
+const hasStats =
+  !!stats && (stats.totalRaters > 0 || stats.contributionCount !== null);
+---
+
+<div class="claim-card">
+  <a class="claim-card__statement" href={path(`/opinions/${claim.id}/`)} data-statement>
+    {claim.statement}
+  </a>
+
+  {lead && <p class="claim-card__lead">{lead}</p>}
+
+  {
+    histogram && (
+      <div class="claim-card__shape">
+        {/* Decoration over data the text equivalent states properly. A bar chart carries its
+            content entirely through height and position, neither of which reaches a screen
+            reader — and an aria-label reading "distribution of positions" tells somebody
+            nothing they could act on. */}
+        <div class="spark" aria-hidden="true">
+          {SCALE_POINTS.map((point) => (
+            <span
+              class="spark__bar"
+              style={`--height: ${Math.round(((histogram[point] ?? 0) / tallest) * 100)}%`}
+            />
+          ))}
+        </div>
+
+        {/* The counts, in scale order, and no interpretation of them. "Mostly agreement" would
+            be this card taking a position; the numbers let a reader tell a bimodal claim from a
+            consensus one, which is the only thing that matters here.
+
+            **The off-scale group is named too.** The bars cover the eleven scored positions, and
+            the statistics line beside them counts everybody who answered — so without this the
+            eleven numbers would sum to less than the total and a screen reader user would have no
+            way to find out why. It is stated in words rather than given a twelfth number in the
+            sequence, because it is not a point on the scale. */}
+        <span class="visually-hidden">
+          Positions by score, 0 to 10: {histogram.join(', ')}.
+          {stats!.noOpinionCount > 0 && (
+            <>
+              {' '}
+              {stats!.noOpinionCount === 1
+                ? '1 more person answered off the scale — no opinion, or outside their expertise.'
+                : `${stats!.noOpinionCount} more people answered off the scale — no opinion, or outside their expertise.`}
+            </>
+          )}
+        </span>
+      </div>
+    )
+  }
+
+  {
+    hasStats && (
+      <p class="claim-card__stats meta" data-card-stats>
+        {/* Positions first, always. */}
+        <span>
+          {stats!.totalRaters} {stats!.totalRaters === 1 ? 'position' : 'positions'}
+        </span>
+
+        {/* Omitted at zero, like the position changes below it. `null` and `0` still mean
+            different things — never counted, against counted and none — but neither is worth a
+            span on a card: "4 positions · 0 contributions" spends half the line saying nothing
+            happened, and the claim's own empty state says it properly. */}
+        {stats!.contributionCount !== null && stats!.contributionCount > 0 && (
+          <span>
+            {stats!.contributionCount}{' '}
+            {stats!.contributionCount === 1 ? 'contribution' : 'contributions'}
+          </span>
+        )}
+
+        {stats!.positionChanges !== null && stats!.positionChanges > 0 && (
+          <span>{stats!.positionChanges} changed position</span>
+        )}
+      </p>
+    )
+  }
+
+  {/* Area, tags, date. The tags are the same arXiv categories reports carry — `public.tags`,
+      shared rather than duplicated — and they are the filter's vocabulary too, through the same
+      engine. Labels rather than codes: `math.NT` is a filter value, "Number theory" is what a
+      reader is scanning for. */}
+  <p class="card__facts claim-card__facts">
+    <span data-area-label>{areaLabel(claim.area)}</span>
+    {claim.tags.map((tag) => (
+      <span class="claim-card__tag">{tag.label}</span>
+    ))}
+    <span class="meta" data-date>Posted {longDate(claim.createdAt)}</span>
+  </p>
+</div>

@@ -1,0 +1,298 @@
+/* Global reset and element-level defaults.
+ *
+ * Specificity discipline
+ * ----------------------
+ * Everything here sits in a cascade layer, and every reset selector is wrapped in
+ * :where() so it carries zero specificity. Two consequences, both deliberate:
+ *
+ *  - A component never has to fight a base rule. `.tombstone { margin: 0 }` beats
+ *    `:where(p) { margin: ... }` without !important, without a longer selector, and
+ *    without anyone having to know this file exists.
+ *  - Astro's scoped component styles are unlayered, and unlayered styles win over
+ *    layered ones regardless of specificity. So component styles always beat these
+ *    defaults, which is the ordering we want and the one people assume anyway.
+ *
+ * The rule for this file: element selectors only, no classes except the few layout
+ * primitives at the bottom, and nothing that a component would plausibly need to undo.
+ */
+
+/* `forms` is declared here although its rules live in forms.css, which only the account
+ * pages import. Layer *order* is fixed by the first declaration the browser sees, so it
+ * has to be stated in the stylesheet every page loads — otherwise the account pages would
+ * order the layers differently from every other page, and a rule that worked in isolation
+ * would lose in context. An empty layer costs nothing. */
+@layer reset, base, layout, forms, corpus;
+
+/* ══ Reset ══════════════════════════════════════════════════════════════════════════ */
+
+@layer reset {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  :where(body, h1, h2, h3, h4, p, figure, blockquote, dl, dd, ul, ol) {
+    margin: 0;
+  }
+
+  :where(ul[role='list'], ol[role='list']) {
+    padding: 0;
+    list-style: none;
+  }
+
+  :where(img, picture, svg, video) {
+    display: block;
+    max-width: 100%;
+  }
+
+  :where(input, button, textarea, select) {
+    font: inherit;
+    color: inherit;
+  }
+
+  /* ── The hidden attribute actually hides things ─────────────────────────────────────
+   * The browser's own `[hidden] { display: none }` lives in the user-agent stylesheet,
+   * which *any* author rule outranks. So the moment a component sets `display: flex` on a
+   * class, `element.hidden = true` stops working on it — silently, and only for that
+   * component.
+   *
+   * This shipped three times before it was noticed, each time as something that looked
+   * like a logic bug: a listing whose filters updated the count and the chips while hiding
+   * no cards, a deletion form visible underneath the request it had just filed, and a
+   * disclosure question that appeared for reports that were never published.
+   *
+   * Not wrapped in :where(), and !important on purpose. This is the one declaration in the
+   * project that must beat everything, including a component's own scoped styles, which
+   * are unlayered and otherwise win. `hidden` means hidden.
+   */
+  [hidden] {
+    display: none !important;
+  }
+
+  /* Long identifiers — DOIs, ORCID iDs, model version strings — must not force a
+   * horizontal scrollbar on a 360px screen. */
+  :where(p, li, h1, h2, h3, h4, dd, dt) {
+    overflow-wrap: break-word;
+  }
+}
+
+/* ══ Base ═══════════════════════════════════════════════════════════════════════════ */
+
+@layer base {
+  html {
+    /* Prevent iOS from inflating text after a rotation, which breaks the type scale. */
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+    /* Anchored headings clear the sticky header instead of hiding under it. */
+    scroll-padding-top: var(--space-xl);
+  }
+
+  body {
+    min-height: 100vh;
+    margin: 0;
+    background-color: var(--ground);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: var(--size-3);
+    font-weight: var(--weight-normal);
+    line-height: var(--leading-normal);
+    /* Plex has real small-cap and ligature coverage; let the browser use it. */
+    font-feature-settings: 'kern' 1, 'liga' 1;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Headings are serif. Display sizes set loose by default, so pull them in. */
+  :where(h1, h2, h3, h4) {
+    font-family: var(--font-serif);
+    font-weight: var(--weight-semibold);
+    line-height: var(--leading-snug);
+    letter-spacing: var(--tracking-tight);
+    text-wrap: balance;
+  }
+
+  :where(h1) {
+    font-size: var(--size-7);
+    line-height: var(--leading-tight);
+  }
+
+  :where(h2) {
+    font-size: var(--size-6);
+  }
+
+  :where(h3) {
+    font-size: var(--size-5);
+  }
+
+  :where(h4) {
+    font-size: var(--size-4);
+  }
+
+  :where(p, li) {
+    text-wrap: pretty;
+  }
+
+  :where(a) {
+    color: var(--accent);
+    text-decoration-line: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.18em;
+    transition: color var(--motion-fast) var(--motion-ease);
+  }
+
+  :where(a:hover) {
+    color: var(--accent-strong);
+    text-decoration-thickness: 2px;
+  }
+
+  /* Monospace marks anything a machine could parse. See tokens.css. */
+  :where(code, kbd, samp, pre) {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+  }
+
+  :where(pre) {
+    overflow-x: auto;
+    padding: var(--space-sm);
+    border: var(--border);
+    border-radius: var(--radius-sm);
+    background-color: var(--surface);
+    line-height: var(--leading-normal);
+  }
+
+  :where(hr) {
+    height: 0;
+    margin: var(--space-xl) 0;
+    border: 0;
+    border-top: var(--border);
+  }
+
+  :where(blockquote) {
+    padding-left: var(--space-md);
+    border-left: var(--border-width-thick) solid var(--rule);
+  }
+
+  :where(strong, b) {
+    font-weight: var(--weight-semibold);
+  }
+
+  :where(small) {
+    font-size: var(--size-2);
+  }
+
+  :where(abbr[title]) {
+    text-decoration: underline dotted;
+    cursor: help;
+  }
+
+  :where(::selection) {
+    background-color: var(--accent-wash);
+  }
+
+  /* ── Focus ──────────────────────────────────────────────────────────────────────
+   * :focus-visible only, so a mouse click does not leave a ring behind, but keyboard
+   * and assistive-tech focus is always plainly visible. Not wrapped in :where(): a
+   * component must not be able to remove this by accident.
+   */
+  :focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-offset);
+    border-radius: var(--radius-sm);
+  }
+
+  /* ── Reduced motion ─────────────────────────────────────────────────────────────
+   * Near-zero rather than zero: a 0.01ms transition still fires transitionend, so
+   * anything waiting on that event does not hang. !important is correct here — a user
+   * who has asked the operating system for less motion outranks every component.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* ══ Layout primitives ══════════════════════════════════════════════════════════════
+ * The only classes in this file. Everything else is a component.
+ */
+
+@layer layout {
+  /* Horizontal container. Width comes from a custom property so a section can widen or
+   * narrow itself without a second class or an override. */
+  .shell {
+    width: 100%;
+    max-width: var(--shell-width, var(--width-shell));
+    margin-inline: auto;
+    padding-inline: var(--gutter);
+  }
+
+  /* A single reading column. Applied to prose, never to the page shell. */
+  .prose {
+    max-width: var(--width-prose);
+  }
+
+  .prose > * + * {
+    margin-block-start: var(--space-md);
+  }
+
+  .prose :where(h2) {
+    margin-block-start: var(--space-xl);
+  }
+
+  .prose :where(h3) {
+    margin-block-start: var(--space-lg);
+  }
+
+  /* The tombstone's second job, per CLAUDE.md: the list bullet. Drawn in CSS for the
+   * same reason Tombstone.astro draws it in CSS — U+25A0 sits outside our latin and
+   * latin-ext subsets, so a typed ■ would fall back to a system font and change size
+   * between platforms. Open and rule-coloured here because as a bullet it is decoration,
+   * and a filled square is a claim. Purely presentational, so it is a pseudo-element and
+   * invisible to assistive tech, which reads the list semantics instead. */
+  .tombstone-list {
+    padding: 0;
+    list-style: none;
+  }
+
+  .tombstone-list > li {
+    position: relative;
+    padding-inline-start: calc(var(--tombstone-size) + 0.75em);
+  }
+
+  .tombstone-list > li + li {
+    margin-block-start: var(--space-2xs);
+  }
+
+  .tombstone-list > li::before {
+    content: '';
+    position: absolute;
+    inset-block-start: 0.5em;
+    inset-inline-start: 0;
+    width: var(--tombstone-size);
+    height: var(--tombstone-size);
+    border: 1.5px solid var(--rule);
+  }
+
+  /* Visible to screen readers, invisible on screen. Used for the accessible names on
+   * status glyphs, where the visual label is shorter than the spoken one needs to be. */
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    border: 0;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}

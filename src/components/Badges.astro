@@ -1,0 +1,136 @@
+---
+/**
+ * The institutional verification badge.
+ *
+ * One signal only: an address at a recognised institution's domain was confirmed to work,
+ * on the date shown. No "Registered" / confirmed-email badge — that fact is implied for
+ * anyone who has posted and is not worth surfacing to readers.
+ *
+ * What the wording is doing
+ * -------------------------
+ * "Institutional email verified — Universität Bonn (Aug 2026)" is the whole claim. It is
+ * not a claim that the person is faculty, holds any position, or still works there, and
+ * every word here is chosen to avoid implying otherwise: no "member of", no "affiliated
+ * with", no job titles, and never the bare institution name on its own.
+ *
+ * The date is not decoration and is never omitted. A badge from three years ago and one
+ * from last week attest to different things, and hiding which is which would make the
+ * badge a claim about the present that nobody checked.
+ *
+ * `institution_source` — which of the three domain layers issued the badge — is
+ * deliberately absent. CLAUDE.md says it is never displayed; profile.ts does not even
+ * fetch it.
+ *
+ * Rendered as a template with its details filled in by script when used on the profile
+ * page, which has no data at build time, and directly from props when the caller has a
+ * profile in hand. Both paths produce the same markup.
+ */
+import { verificationMonth } from '../lib/format';
+
+interface Props {
+  /** Null for a registered account whose address matched no registry record. */
+  institution?: { name: string; country: string; verifiedAt: string } | null;
+  /** Render hidden, for a page that fills the details in from the browser. */
+  pending?: boolean;
+  /**
+   * One line, for a comment header — same claim, no card. A bordered card repeated down
+   * every comment would be the loudest thing on the page. The wording is identical, which
+   * is the whole reason this is a variant of this component rather than a line written
+   * somewhere else: what a badge claims is settled in exactly one file.
+   */
+  compact?: boolean;
+}
+
+const { institution = null, pending = false, compact = false } = Astro.props;
+
+const detail = institution
+  ? `${institution.name}, ${institution.country} (${verificationMonth(institution.verifiedAt)})`
+  : '';
+---
+
+{
+  compact ? (
+    institution && (
+      <p class="badge-line">
+        <span class="badge-line__tier">Institutional email verified</span>
+        <span class="badge-line__detail">{detail}</span>
+      </p>
+    )
+  ) : (
+    (pending || institution) && (
+      <ul class="badges" role="list" data-badges hidden={pending}>
+        <li class="badge" data-badge="institutional" hidden={!institution}>
+          <span class="badge__tier">Institutional email verified</span>
+          <span class="badge__detail" data-badge-detail>{detail}</span>
+        </li>
+      </ul>
+    )
+  )
+}
+
+<style>
+  .badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2xs);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .badges[hidden] {
+    display: none;
+  }
+
+  .badge {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3xs);
+    padding: var(--space-2xs) var(--space-xs);
+    border: var(--border);
+    border-inline-start: var(--border-width-thick) solid var(--accent);
+    background-color: var(--surface);
+  }
+
+  .badge[hidden] {
+    display: none;
+  }
+
+  /* Mono, uppercase, tracked out — the same treatment every label on this site gets. */
+  .badge__tier {
+    font-family: var(--font-mono);
+    font-size: var(--size-0);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--ink-muted);
+  }
+
+  /* An institution name, a country, and a date are all things a machine could parse. */
+  .badge__detail {
+    font-family: var(--font-mono);
+    font-size: var(--size-1);
+  }
+
+  /* The compact form. Same claim, one line, no card: a thread of twenty comments each
+     carrying a bordered badge would read as a directory rather than a discussion. The tier
+     is still labelled, because "Universität Bonn" on its own is the implication this
+     project exists not to make. */
+  .badge-line {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3xs) var(--space-2xs);
+    margin: 0;
+    font-size: var(--size-0);
+    color: var(--ink-muted);
+  }
+
+  .badge-line__tier {
+    font-family: var(--font-mono);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+  }
+
+  .badge-line__detail {
+    font-family: var(--font-mono);
+  }
+</style>

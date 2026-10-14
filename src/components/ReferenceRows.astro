@@ -1,0 +1,93 @@
+---
+/**
+ * Supporting material: links a reader would need to follow the account up.
+ *
+ * Links only, and that is a v1 scope decision rather than an oversight. The site is static
+ * with no server, so accepting a file means provisioning a storage bucket, a size cap,
+ * moderation of binary content, and an image-licence question that CC BY 4.0 does not settle
+ * on the contributor's behalf. So `figure` takes a link too.
+ *
+ * There is deliberately **no AI-conversation kind**. A share link belongs in the Transcript
+ * section, under the rule that it may never stand alone — a second route in here would be a
+ * way round that rule rather than a new kind of thing.
+ *
+ * The list starts empty, unlike the tool rows: nothing here is required, and a form that
+ * opens with a blank required-looking row invites people to fill it in because it is there.
+ *
+ * Two warnings, both inline and neither blocking:
+ *
+ *   Drive, Dropbox, Overleaf, SharePoint — most links to these are readable only by the
+ *   person who made them. The form says so; the database does not refuse them, because
+ *   plenty of them are shared correctly and refusing would refuse those too.
+ *
+ *   A `paper` that is not a DOI or an arXiv abs link. A resolvable identifier outlives a
+ *   departmental URL, and this is a corpus meant to be read in five years.
+ */
+import { REFERENCE_KINDS, REPORT_LIMITS } from '../lib/report-schema';
+---
+
+<div class="refs" data-references>
+  <ul class="refs__list" data-reference-list role="list"></ul>
+
+  <template data-reference-template>
+    <li>
+      <fieldset class="tool-row">
+        <legend class="tool-row__legend" data-row-legend>Link</legend>
+
+        <div class="refs__fields">
+          <div class="field">
+            <label class="field__label" data-label-for="kind">What it is</label>
+            <select class="field__control" data-reference-kind>
+              {REFERENCE_KINDS.map((kind) => <option value={kind.value}>{kind.label}</option>)}
+            </select>
+          </div>
+
+          <div class="field">
+            <label class="field__label" data-label-for="url">Link</label>
+            <input
+              class="field__control"
+              type="url"
+              data-reference-url
+              maxlength={REPORT_LIMITS.referenceUrl}
+              placeholder="https://arxiv.org/abs/2601.01234"
+              inputmode="url"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </div>
+
+          <button class="button button--quiet tool-row__remove" type="button" data-reference-remove>
+            Remove
+          </button>
+        </div>
+
+        {/* Advice, not an error. Separate elements so a row can carry both at once and
+            neither overwrites the other. */}
+        <p class="field__hint refs__warning" data-reference-warning hidden></p>
+        <p class="field__error" data-reference-error hidden></p>
+      </fieldset>
+    </li>
+  </template>
+
+  <div class="actions">
+    <button class="button" type="button" data-reference-add>Add a link</button>
+  </div>
+  
+</div>
+
+<style>
+  .refs {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+  }
+
+  .refs__list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+</style>

@@ -1,0 +1,315 @@
+---
+/**
+ * The distribution of answers to one claim.
+ *
+ * A histogram, a median, and — since 2026-08-21 — a mean, in that order of prominence and for
+ * that reason. The mean of an 11-point bipolar scale is misleading exactly when the
+ * distribution is bimodal, and bimodal is what to expect on the contested claims: a single
+ * number reports "6.2, mild agreement" for a community that has split cleanly into two camps.
+ * The bars are the finding; the median is a summary of them that cannot invent a middle nobody
+ * occupies; the mean is given because people ask for it.
+ *
+ * **The display rule is what carries the old prohibition, so it lives here rather than only in
+ * CLAUDE.md.** The mean never appears as a headline, never on a card, never on a sort control,
+ * and never without the histogram beside it. In this component that means: in the statistics
+ * line and nowhere else, smaller than the median, muted where the median is ink, and below the
+ * chart rather than above it. The four equal stat cards that used to sit here were removed for
+ * exactly this reason — they made every number a headline, and one of them is now the mean.
+ *
+ * Accessibility, which is most of the work here
+ * ---------------------------------------------
+ * The bars are `aria-hidden` and a real `<table>` carries the same numbers, visually
+ * hidden. That is not a courtesy: a bar chart conveys its content entirely through height
+ * and position, both of which are unavailable to a screen reader, and a chart with an
+ * `aria-label` saying "histogram of ratings" tells somebody nothing they can act on.
+ *
+ * Nothing is carried by colour alone. The reader's own answer is marked with the word "you"
+ * above its bar and the bar filled solid rather than tinted; the median is marked with the word
+ * "median" under its column and a rule. **The two sit on opposite sides of the axis**, which is
+ * what lets both appear on one column — the commonest case on a small claim is that your own
+ * answer is the median. Both survive being printed in grey, and both are in the table.
+ *
+ * Rendered empty and filled by script: the aggregate is deliberately not in the page source
+ * until the reader has answered. See the header of src/lib/claims.ts.
+ */
+import { SCALE_ANCHORS, SCALE_POINTS } from '../lib/claims';
+---
+
+<div class="histogram" data-histogram hidden>
+  {/* The plot is decoration over data the table below states properly. */}
+  <div class="histogram__plot" aria-hidden="true">
+    {
+      SCALE_POINTS.map((point) => (
+        <div class="histogram__col" data-col={point}>
+          <span class="histogram__you" data-you hidden>you</span>
+          <span class="histogram__count" data-count>0</span>
+          <span class="histogram__bar" data-bar style="--height: 0%" />
+          <span class="histogram__tick">{point}</span>
+          <span class="histogram__anchor">{SCALE_ANCHORS[point] ?? ''}</span>
+          <span class="histogram__median" data-median hidden>median</span>
+        </div>
+      ))
+    }
+  </div>
+
+  <table class="visually-hidden" data-histogram-table>
+    <caption>How people answered, by score</caption>
+    <thead>
+      <tr>
+        <th scope="col">Score</th>
+        <th scope="col">People</th>
+        <th scope="col">Notes</th>
+      </tr>
+    </thead>
+    <tbody data-histogram-rows></tbody>
+  </table>
+
+  {/* Somebody who declined has no column, because "outside my expertise" is not a position on
+      a scale of agreement — and parking them at 5 would file a declared non-opinion as a
+      neutral opinion, which is the exact corruption the off-scale option exists to prevent. So
+      they are said in words instead, right under the chart they are not in. Filled and shown by
+      renderHistogram; absent when nobody declined. */}
+  <p class="histogram__offscale" data-offscale hidden></p>
+
+  {/* One line, not four cards.
+
+      The cards were four equal boxes with the numbers set at --size-5, which made every one of
+      them a headline — and one of them is now the mean. A headline mean is the specific thing
+      the display rule forbids, because it is the reading that survives when somebody skims: on
+      a bimodal claim it reports mild agreement for a community that has split cleanly in two.
+      A line puts the mean where it belongs, beside the median, smaller than it, and downstream
+      of the chart that contradicts it.
+
+      Median first among the two summaries and set heavier, because it is the one that cannot
+      invent a middle nobody occupies. Coverage is spelled as "N expressed an opinion" rather
+      than as a percentage: a ratio invites reading it as a quality score for the claim, where
+      the count invites the comparison that matters — how many of the people who answered were
+      willing to put a number on it. */}
+  <p class="histogram__line" data-histogram-line>
+    <span class="histogram__figure"><b data-stat="positions">0</b> positions</span>
+    <span class="histogram__figure"><b data-stat="opinions">0</b> expressed an opinion</span>
+    <span class="histogram__figure histogram__figure--lead">median <b data-stat="median">—</b></span>
+    <span class="histogram__figure histogram__figure--aside">mean <b data-stat="mean">—</b></span>
+    <span class="histogram__figure" data-figure="contributions" hidden><b data-stat="contributions">0</b> contributions</span>
+    <span class="histogram__figure" data-figure="changed" hidden><b data-stat="changed">0</b> changed position</span>
+  </p>
+</div>
+
+<style>
+  .histogram {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+  }
+
+  .histogram__plot {
+    display: grid;
+    grid-template-columns: repeat(11, minmax(0, 1fr));
+    gap: var(--space-2xs);
+    padding-block-start: var(--space-sm);
+    border-block-end: var(--border);
+  }
+
+  .histogram__col {
+    /* No `position: relative` any more: it existed only to anchor the absolutely positioned
+       dashed line that used to strike through this column's own numbers. */
+    display: grid;
+    /* you · count · bar · tick · anchor · median. Fixed rows so every column's tick sits on
+       the same line however tall its bar is. */
+    grid-template-rows: 1.5rem 1.25rem 10rem auto 2.4rem 1.4rem;
+    gap: var(--space-3xs);
+    justify-items: center;
+    text-align: center;
+  }
+
+  /* Every child is placed explicitly, and that is load-bearing rather than tidy. The "you"
+     and "median" markers are `hidden` in most columns, and a hidden child is removed from
+     the flow entirely — so with automatic placement the count would slide into row 1, the
+     bar into row 2, and each column would be laid out differently depending on which
+     markers it happened to carry. The result was eleven columns with their baselines at
+     eleven different heights. */
+  .histogram__you {
+    grid-row: 1;
+  }
+
+  .histogram__count {
+    grid-row: 2;
+  }
+
+  .histogram__bar {
+    grid-row: 3;
+  }
+
+  .histogram__tick {
+    grid-row: 4;
+  }
+
+  .histogram__anchor {
+    grid-row: 5;
+  }
+
+  .histogram__median {
+    grid-row: 6;
+  }
+
+  .histogram__bar {
+    align-self: end;
+    width: 55%;
+    height: var(--height);
+    min-height: 2px;
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+    background: color-mix(in srgb, var(--accent) 42%, var(--surface));
+  }
+
+  /* ── Marking your answer, and marking the median ──────────────────────────────────
+     These two collide constantly, because the commonest case on a small claim is that your
+     own answer *is* the median — and the column that carries both is the one that used to carry
+     a vertical dashed line straight through its own numbers.
+
+     Three things went wrong there and all three are fixed by not overlaying anything:
+
+       The dashed line was `position: absolute; left: 50%`, running from row 1 to the axis. The
+       count and the tick are centred, so the line passed exactly through the middle of both
+       digits and read as a strikethrough on them.
+
+       The word "you" carried a `::before` diamond with `display: block`, which is two stacked
+       lines of text in a row 1.5rem tall. It overflowed downwards onto the count.
+
+       That diamond was U+25C6, which is outside the self-hosted `latin` and `latin-ext`
+       subsets — so it was a fallback glyph beside IBM Plex, the same problem as U+25A0 in the
+       tombstone and U+2192 in the movement badge. It is gone rather than redrawn: the word and
+       the bar identify the column, and a glyph was never carrying meaning here.
+
+     What marks them now, with nothing absolutely positioned and nothing overlapping:
+
+       **Yours** — the word above the column, and the bar filled solid instead of tinted. Above
+       the axis.
+       **The median** — a rule and the word, below the axis.
+
+     So the two live on opposite sides of the axis and can both appear on one column without
+     touching. Neither is carried by colour alone: each has its word, and both are in the
+     visually-hidden table regardless. */
+
+  .histogram__col[data-mine] .histogram__bar {
+    /* Solid where every other bar is 42% tinted. Not a colour *by position* — the accent is the
+       same at 0 as at 10 — just the one bar the reader has a claim on. */
+    background: var(--accent);
+  }
+
+  .histogram__you,
+  .histogram__median {
+    font-family: var(--font-mono);
+    font-size: var(--size-0);
+    letter-spacing: var(--tracking-wide);
+    /* One line, always. The row is 1.5rem and two lines do not fit in it — which is how the
+       overflow onto the count happened in the first place. */
+    white-space: nowrap;
+    line-height: 1;
+  }
+
+  .histogram__you {
+    color: var(--accent-strong);
+    font-family: var(--font-sans);
+    font-weight: var(--weight-semibold);
+    /* Sat at the bottom of its row, so it reads as belonging to the column under it rather
+       than floating above the whole chart. */
+    align-self: end;
+  }
+
+  .histogram__median {
+    padding-block-start: var(--space-3xs);
+    border-block-start: var(--border-width-thick) solid var(--ink);
+    color: var(--ink);
+    align-self: start;
+    width: 100%;
+  }
+
+  .histogram__count {
+    font-family: var(--font-mono);
+    font-size: var(--size-0);
+    color: var(--ink-muted);
+  }
+
+  .histogram__tick {
+    font-family: var(--font-mono);
+    font-size: var(--size-1);
+  }
+
+  .histogram__anchor {
+    font-size: var(--size-0);
+    line-height: var(--leading-snug);
+    color: var(--ink-muted);
+    text-wrap: balance;
+  }
+
+  /* One line, wrapping on a narrow screen. The separator is a middot from ::before rather
+     than a character in the markup, so the text equivalent above does not read a row of
+     punctuation to somebody who is already getting these numbers from the table. */
+  .histogram__line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-2xs) 0;
+    margin: 0;
+    font-size: var(--size-2);
+    color: var(--ink-muted);
+  }
+
+  .histogram__figure + .histogram__figure::before {
+    content: '·';
+    margin-inline: var(--space-2xs);
+    color: var(--rule);
+  }
+
+  /* Every number is mono, because monospace marks anything a machine could parse. */
+  .histogram__figure b {
+    font-family: var(--font-mono);
+    font-weight: var(--weight-semibold);
+    color: var(--ink);
+  }
+
+  /* The median leads. Heavier than the mean beside it and set in ink rather than muted,
+     which is the whole of the visual hierarchy this line needs. */
+  .histogram__figure--lead {
+    color: var(--ink);
+    font-weight: var(--weight-semibold);
+  }
+
+  .histogram__figure--lead b {
+    font-size: var(--size-3);
+  }
+
+  /* And the mean is the aside. Deliberately no larger than the surrounding prose: a mean set
+     at display size is a headline whatever the words around it say. */
+  .histogram__figure--aside b {
+    color: var(--ink-muted);
+  }
+
+  .histogram__offscale {
+    margin: 0;
+    font-size: var(--size-2);
+    color: var(--ink-muted);
+  }
+
+  .histogram__frame {
+    max-width: var(--measure);
+    margin: 0;
+    color: var(--ink-muted);
+    font-size: var(--size-2);
+  }
+
+  .histogram__why {
+    font-size: var(--size-2);
+    color: var(--ink-muted);
+  }
+
+  .histogram__why summary {
+    cursor: pointer;
+    color: var(--accent-strong);
+  }
+
+  .histogram__note {
+    margin-block-start: var(--space-2xs);
+    color: var(--ink-muted);
+  }
+</style>

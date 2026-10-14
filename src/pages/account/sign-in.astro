@@ -1,0 +1,111 @@
+---
+/**
+ * Signing in.
+ *
+ * Nothing on this page distinguishes "no such account" from "wrong password", and that is
+ * deliberate rather than lazy — see the note at the top of src/lib/auth.ts. Some members
+ * of this community have professional reasons to keep their participation here private,
+ * and a form that confirms whether an address is registered hands that away to anyone who
+ * can type.
+ */
+import Account from '../../layouts/Account.astro';
+import Field from '../../components/Field.astro';
+import FormStatus from '../../components/FormStatus.astro';
+import Turnstile from '../../components/Turnstile.astro';
+import { path } from '../../lib/paths';
+---
+
+<Account
+  title="Sign in"
+  description="Sign in to post, comment, answer claims, and confirm whether a report still reproduces."
+  lead="Reading needs no account. Signing in is for posting, rating, and confirming whether a report still reproduces."
+  gate="anonymous"
+>
+  <form class="form" id="sign-in" novalidate>
+    <FormStatus id="sign-in-status" />
+
+    <Field
+      id="email"
+      label="Email address"
+      type="email"
+      required
+      autocomplete="email"
+      maxlength={254}
+    />
+
+    <Field
+      id="password"
+      label="Password"
+      type="password"
+      required
+      autocomplete="current-password"
+    >
+      <a slot="hint" href={path('/account/reset/')}>Forgotten your password?</a>
+    </Field>
+
+    <Turnstile id="sign-in-turnstile" />
+
+    <div class="actions">
+      <button class="button button--primary" type="submit">Sign in</button>
+      <a class="button" href={path('/account/sign-up/')}>Create an account</a>
+    </div>
+
+    <p class="field__hint">
+      Signed up but never confirmed? <a href={path('/account/confirm/')}>Get another confirmation link</a>.
+    </p>
+  </form>
+</Account>
+
+<script>
+  import { signIn } from '../../lib/auth';
+  import { mountTurnstile } from '../../lib/turnstile';
+  import { path } from '../../lib/paths';
+  import {
+    clearFieldErrors,
+    hideStatus,
+    query,
+    setBusy,
+    showStatus,
+    validateFields,
+  } from '../../lib/forms';
+  import { validateEmail } from '../../lib/validation';
+
+  const form = query<HTMLFormElement>('#sign-in');
+  const status = query<HTMLElement>('#sign-in-status');
+  const submit = query<HTMLButtonElement>('button[type="submit"]', form);
+  const email = query<HTMLInputElement>('#email', form);
+  const password = query<HTMLInputElement>('#password', form);
+
+  const turnstile = mountTurnstile(query<HTMLElement>('#sign-in-turnstile', form));
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    clearFieldErrors(form);
+    hideStatus(status);
+
+    // The address is checked for shape; the password is not checked at all. Applying the
+    // signup rules here would reject a correct password set before the rule changed, and
+    // tell someone their own password is invalid.
+    const checks = [{ id: 'email', error: validateEmail(email.value) }];
+    if (!password.value) {
+      checks.push({ id: 'password', error: 'Enter your password.' });
+    }
+
+    if (!validateFields(checks, form)) return;
+
+    setBusy(submit, true, 'Signing in…');
+
+    const widget = await turnstile;
+    const result = await signIn(email.value, password.value, await widget.token());
+
+    setBusy(submit, false);
+
+    if (!result.ok) {
+      widget.reset();
+      showStatus(status, 'error', result.message);
+      return;
+    }
+
+    window.location.assign(path('/account/'));
+  });
+</script>

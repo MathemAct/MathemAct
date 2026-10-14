@@ -1,0 +1,201 @@
+---
+/**
+ * The home page diagram: the cyclic group C3 acting on the vertices of a triangle, beside
+ * a handwritten definition of a group action.
+ *
+ * Why this picture. It is a real definition, drawn the way it gets drawn on a board, and
+ * that is the whole argument the landing page is making — mathematics is something people
+ * *do*. A stock gradient or an abstract network graphic would say nothing, and this
+ * audience reads a decorative pseudo-formula as an insult.
+ *
+ * Every colour comes from a class, not from a fill attribute. The drawing arrived with its
+ * own reds and greys; running it through the landing tokens instead is what keeps the page
+ * on one red rather than two nearly-identical ones, which is exactly the drift tokens.css
+ * exists to prevent.
+ *
+ * Accessibility: role="img" with a title and a description, both referenced by
+ * aria-labelledby so the pair is announced rather than just the title. Ids are prefixed
+ * because a marker id is document-global and this file must stay droppable into any page.
+ */
+---
+
+<svg
+  class="diagram"
+  viewBox="0 0 680 405"
+  role="img"
+  aria-labelledby="ga-title ga-desc"
+  xmlns="http://www.w3.org/2000/svg"
+>
+  <title id="ga-title">A group action: the cyclic group C3 acting on the three vertices of a triangle</title>
+  <desc id="ga-desc">
+    A tilted equilateral triangle with vertices labelled A, E and O and its centre marked M,
+    drawn over dashed medians. Three curved arrows outside the triangle show the 120 degree
+    rotation cycling the vertices. To the right, a handwritten definition of a group action
+    named alpha: it maps a pair consisting of a group element and a point to a point, and
+    satisfies the identity law and the compatibility law.
+  </desc>
+
+  <defs>
+    <marker
+      id="ga-arrowhead"
+      viewBox="0 0 10 10"
+      refX="8"
+      refY="5"
+      markerWidth="6"
+      markerHeight="6"
+      orient="auto-start-reverse"
+    >
+      <path
+        class="diagram__head"
+        d="M2 1L8 5L2 9"
+        stroke-width="1.5"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+    </marker>
+  </defs>
+
+  {/* No ground rect. The drawing arrived with a tinted rounded panel behind it, which put
+      a box on the page that the layout does not otherwise have — the hero has no cards,
+      and a panel here reads as a slot something was dropped into rather than as part of
+      the page. It sits on the paper instead. */}
+
+  {/* The three orbits of the rotation, drawn outside the triangle. */}
+  <g class="diagram__orbits">
+    <path d="M201.8 64.6 A158 158 0 0 0 30.6 235.8" marker-end="url(#ga-arrowhead)" />
+    <path d="M44.8 288.8 A158 158 0 0 0 278.6 351.4" marker-end="url(#ga-arrowhead)" />
+    <path d="M317.4 312.6 A158 158 0 0 0 254.8 78.8" marker-end="url(#ga-arrowhead)" />
+  </g>
+
+  <circle class="diagram__centre" cx="188" cy="222" r="2.8" />
+
+  {/* Medians, continuing through the centre and past the edges, plus the six-pointed
+      tick that marks the centroid. */}
+  <g class="diagram__rules">
+    <g stroke-dasharray="10 4.5" stroke-dashoffset="7.53">
+      <line x1="221.1" y1="98.4" x2="164.2" y2="310.9" />
+      <line x1="64.4" y1="255.1" x2="276.9" y2="198.2" />
+      <line x1="278.5" y1="312.5" x2="122.9" y2="156.9" />
+    </g>
+    <line x1="189.35" y1="216.98" x2="186.65" y2="227.02" />
+    <line x1="182.98" y1="223.35" x2="193.02" y2="220.65" />
+    <line x1="191.68" y1="225.68" x2="184.32" y2="218.32" />
+  </g>
+
+  <polygon class="diagram__triangle" points="221.1,98.4 278.5,312.5 64.4,255.1" />
+
+  <g class="diagram__vertices">
+    <circle cx="221.1" cy="98.4" r="4.4" />
+    <circle cx="64.4" cy="255.1" r="4.4" />
+    <circle cx="278.5" cy="312.5" r="4.4" />
+  </g>
+
+  <text class="diagram__map" x="384" y="142">&#945;</text>
+
+  <g class="diagram__hand">
+    <text class="diagram__label" x="205" y="90" text-anchor="middle">A</text>
+    <text class="diagram__label" x="51" y="277" text-anchor="middle">E</text>
+    <text class="diagram__label" x="293" y="334" text-anchor="middle">O</text>
+    <text class="diagram__label diagram__label--centre" x="209" y="207" text-anchor="middle">M</text>
+
+    <text x="412" y="142">:</text>
+    <text x="494" y="142" text-anchor="end">G &#215; X</text>
+    <text x="556" y="142">X</text>
+    <text x="494" y="200" text-anchor="end">( g, x )</text>
+    <text x="556" y="200">g &#183; x</text>
+
+    <g class="diagram__law">
+      <text x="462" y="287" text-anchor="end">e &#183; x</text>
+      <text x="476" y="287" text-anchor="middle">=</text>
+      <text x="490" y="287">x</text>
+      <text x="462" y="340" text-anchor="end">( gh ) &#183; x</text>
+      <text x="476" y="340" text-anchor="middle">=</text>
+      <text x="490" y="340">g &#183; ( h &#183; x )</text>
+    </g>
+  </g>
+
+  {/* The two arrows of the definition, drawn by hand rather than with a marker so they
+      keep the slight wobble of the rest of the lettering. */}
+  <g class="diagram__arrows">
+    <path d="M506 142 Q526 140.2 546 142" />
+    <path d="M536.5 136.6 Q542 139.8 546 142 Q542 144.2 536.5 147.4" />
+    <path d="M506 189 L506 211" />
+    <path d="M506 200 Q526 198.2 546 200" />
+    <path d="M536.5 194.6 Q542 197.8 546 200 Q542 202.2 536.5 205.4" />
+  </g>
+</svg>
+
+<style>
+  .diagram {
+    width: 100%;
+    height: auto;
+  }
+
+  /* ── The triangle and its group ─────────────────────────────────────────────────── */
+
+  .diagram__orbits path {
+    fill: none;
+    stroke: var(--home-red);
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    opacity: 0.8;
+  }
+
+  .diagram__head {
+    fill: none;
+    stroke: var(--home-red);
+  }
+
+  .diagram__centre,
+  .diagram__vertices circle {
+    fill: var(--home-red);
+  }
+
+  .diagram__rules line {
+    stroke: var(--home-ink-soft);
+    stroke-width: 1.15;
+  }
+
+  .diagram__triangle {
+    fill: none;
+    stroke: var(--home-ink);
+    stroke-width: 2;
+    stroke-linejoin: round;
+  }
+
+  /* ── The definition ─────────────────────────────────────────────────────────────── */
+
+  .diagram__map {
+    fill: var(--home-red);
+    font-family: var(--font-serif);
+    font-size: 31px;
+    font-style: italic;
+  }
+
+  .diagram__hand {
+    fill: var(--home-ink);
+    font-family: var(--font-hand);
+    font-size: 27px;
+  }
+
+  .diagram__label {
+    fill: var(--home-red);
+    font-size: 24px;
+  }
+
+  .diagram__label--centre {
+    font-size: 19px;
+  }
+
+  .diagram__law {
+    font-size: 24px;
+  }
+
+  .diagram__arrows path {
+    fill: none;
+    stroke: var(--home-ink);
+    stroke-width: 1.7;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+</style>

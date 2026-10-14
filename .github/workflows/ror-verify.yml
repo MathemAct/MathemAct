@@ -1,0 +1,162 @@
+# Load the real ROR dump into a throwaway database and check what the matcher does with it.
+#
+# Two things this catches that nothing else can:
+#
+#   1. A change to ROR's schema or to its release file naming. The loader reads schema v2
+#      by hand; when ROR next reshapes a field, this fails here rather than during a live
+#      load against production.
+#   2. A regression in private.match_institution() against real data rather than fixtures.
+#      The pgTAP suite uses five invented records; this uses thirty thousand real ones,
+#      including the awkward cases nobody would think to invent — stat.math.ethz.ch under
+#      math.ethz.ch under ethz.ch, for instance.
+#
+# Nothing here touches production. The dump is downloaded to the runner and thrown away
+# with it; it is never committed, and the loader itself never downloads anything.
+name: ROR verification
+
+on:
+  workflow_dispatch:
+  # ROR releases roughly monthly and docs/ror.md asks for a quarterly refresh. Checking
+  # monthly means a schema change surfaces here, on a disposable database, well before
+  # somebody runs the loader against the real one.
+  schedule:
+    - cron: '17 4 1 * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ror-verify
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Pinned for the same reason as test-db.yml, which carries the long version: this
+      # job also runs `supabase start`, so the CLI version decides which Postgres image
+      # the matching rules are verified against. Keep the two in step.
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3.0.0
+        with:
+          version: 2.115.0
+
+      - name: Start the local Supabase stack
+        run: supabase start -x realtime,storage-api,imgproxy,studio,edge-runtime,logflare,vector
+
+      # Resolved through the concept DOI rather than pinned, so this follows ROR's
+      # releases. The version actually used is echoed into the job summary.
+      - name: Download the latest ROR dump
+        id: dump
+        run: |
+          set -euo pipefail
+
+          # Zenodo intermittently answers a large download with a 504. Retry rather than
+          # fail the job over somebody else's load balancer; --retry-all-errors is what
+          # makes curl retry an HTTP error rather than only a connection failure.
+          fetch() { curl -sS -L --fail-with-body \
+                      --retry 6 --retry-delay 15 --retry-all-errors \
+                      --connect-timeout 30 --max-time 900 "$@"; }
+
+          meta=$(fetch \
+            'https://zenodo.org/api/records?q=conceptrecid:6347574&sort=mostrecent&all_versions=false&size=1')
+
+          record=$(printf '%s' "$meta" | jq -r '.hits.hits[0].id')
+          version=$(printf '%s' "$meta" | jq -r '.hits.hits[0].metadata.version')
+          published=$(printf '%s' "$meta" | jq -r '.hits.hits[0].metadata.publication_date')
+          doi=$(printf '%s' "$meta" | jq -r '.hits.hits[0].doi')
+          key=$(printf '%s' "$meta" | jq -r '.hits.hits[0].files[0].key')
+
+          echo "ROR $version, published $published, DOI $doi"
+          fetch -o ror.zip "https://zenodo.org/records/${record}/files/${key}?download=1"
+          unzip -q ror.zip -d ror
+
+          # Releases from 2.0 onward carry no schema suffix; older ones ship both schemas
+          # in one archive and the v2 file is the one ending _schema_v2.json.
+          json=$(find ror -name '*_schema_v2.json' | head -1)
+          [ -n "$json" ] || json=$(find ror -name '*-ror-data.json' | head -1)
+          [ -n "$json" ] || { echo "::error::No ROR v2 JSON in the archive"; exit 1; }
+
+          echo "json=$json" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "doi=$doi" >> "$GITHUB_OUTPUT"
+          echo "### ROR verification" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Dump \`$version\`, published \`$published\`, DOI \`$doi\`." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Load it
+        env:
+          SUPABASE_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+        run: node scripts/load-ror.mjs "${{ steps.dump.outputs.json }}"
+
+      # The point of the whole exercise: given a real email domain, does the matcher find
+      # the right institution? The probes are real mathematics departments and institutes.
+      - name: Match real European mathematics institutes
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -X -q -f - <<'SQL' | tee report.txt
+          \pset border 2
+          \pset format aligned
+          with probe(email_domain, note) as (values
+            ('maths.ox.ac.uk',        'department under a university domain'),
+            ('dpmms.cam.ac.uk',       'department under a university domain'),
+            ('stat.math.ethz.ch',     'three levels deep, institute has its own record'),
+            ('math.ethz.ch',          'two levels, falls back to the university'),
+            ('ihes.fr',               'institute, exact match'),
+            ('sissa.it',              'institute, exact match'),
+            ('sns.it',                'institute, exact match'),
+            ('renyi.hu',              'institute, exact match'),
+            ('weizmann.ac.il',        'ac.il, which no TLD rule would get right'),
+            ('ista.ac.at',            'ac.at'),
+            ('math.uni-bonn.de',      'department under a university domain'),
+            ('bcamath.org',           'a .org research centre'),
+            ('uantwerpen.be',         'no ROR domain; recovered from the website'),
+            ('uni-mannheim.de',       'no ROR domain; recovered from the website'),
+            ('lsbu.ac.uk',            'no ROR domain; recovered from the website'),
+            ('ippt.pan.pl',           'no ROR domain; recovered from the website'),
+            ('math.leidenuniv.nl',    'no ROR domain; manual, ROR lists leiden.edu'),
+            ('mis.mpg.de',            'no ROR domain; manual, specific institute'),
+            ('mpim-bonn.mpg.de',      'no ROR domain; manual, specific institute'),
+            ('mfo.de',                'no ROR domain; manual'),
+            ('mittag-leffler.se',     'no ROR domain; manual'),
+            ('fhi.mpg.de',            'no record of its own; falls back to manual mpg.de'),
+            ('gmail.com',             'consumer provider, must be refused'),
+            ('outlook.com',           'consumer provider, must be refused'),
+            ('europa.eu',             'withheld parent: must NOT be one institution'),
+            ('some-company.uk',       'a TLD is never a match')
+          )
+          select p.email_domain            as "email domain",
+                 coalesce(i.name, '--')    as "resolves to",
+                 coalesce(i.country_name, '--') as "country",
+                 coalesce(m.source, '--')  as "via",
+                 p.note                    as "why it is here"
+            from probe p
+            left join lateral (select * from private.match_institution(p.email_domain)) m on true
+            left join private.ror_institutions i on i.ror_id = m.ror_id
+           order by (m.ror_id is null), p.email_domain;
+
+          select source, count(*) from private.ror_domains group by source order by source;
+          select count(*) as manual_domains from private.manual_domains;
+          select count(*) as institutions from private.ror_institutions;
+          SQL
+
+          {
+            echo ""
+            echo '```'
+            cat report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

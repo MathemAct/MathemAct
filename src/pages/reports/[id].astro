@@ -1,0 +1,622 @@
+---
+/**
+ * One report, laid out to be skimmed the way a researcher skims a paper.
+ *
+ * A reader arriving here usually wants one specific thing: which model was it, what did
+ * they do, did it work. So every field is a titled block with a mono label above it.
+ * Order: tools → aim → method → prompts → outcome/verification (raised surface) →
+ * caveats → supporting material. Outcome and verification are set larger to distinguish
+ * them from the narrative, even though they follow it.
+ *
+ * A real page at a real URL, generated at build time. That is what makes a report
+ * citable, and it is why reads go through the corpus module rather than a browser query:
+ * see the header of src/lib/reports.ts.
+ */
+import Base from '../../layouts/Base.astro';
+import Badges from '../../components/Badges.astro';
+import CommentThread from '../../components/CommentThread.astro';
+import CopyButton from '../../components/CopyButton.astro';
+import References from '../../components/References.astro';
+import StalenessNote from '../../components/StalenessNote.astro';
+import '../../styles/corpus.css';
+import '../../styles/forms.css';
+import { referencesFrom, referencesTo } from '../../lib/citations';
+import { threadFor } from '../../lib/comments';
+import { longDate } from '../../lib/format';
+import { path } from '../../lib/paths';
+import {
+  areaLabel,
+  countedFacts,
+  outcomeLabel,
+  referenceKindLabel,
+  taskTypeLabel,
+} from '../../lib/report-schema';
+import { getReport, listReports } from '../../lib/reports';
+import { findRelated } from '../../lib/related';
+import { LICENCE, SITE } from '../../lib/site';
+import { VERDICT, confirmationQuestion, verdictsFor } from '../../lib/status';
+
+export async function getStaticPaths() {
+  const reports = await listReports();
+  return reports.map((report) => ({ params: { id: report.id } }));
+}
+
+const { id } = Astro.params;
+const report = await getReport(id!);
+
+// getStaticPaths only ever produces ids that exist, so this is unreachable — it is here
+// because `report` is optional to the type system and an unchecked `!` would turn a
+// future refactor into a stack trace during the build.
+if (!report) return Astro.redirect(path('/reports/'));
+
+const canonical = new URL(Astro.url.pathname, Astro.site).href;
+const authorName = report.author?.displayName ?? 'Anonymous';
+
+const [thread, incoming, outgoing] = await Promise.all([
+  threadFor('report', report.id),
+  referencesTo('report', report.id),
+  referencesFrom('report', report.id),
+]);
+
+const related = findRelated(report);
+
+/**
+ * The two answers this report's outcome puts on the table, in the order they are offered.
+ * A report that did not work is asked whether it still does not, because asking it "does
+ * this still work?" — which is what this page did until 2026-08-23 — offers a reader who
+ * has rechecked a failure no way to say what they found.
+ *
+ * The pair is sent to the browser on `data-outcome` rather than duplicated in the script:
+ * one place decides, and it is `verdictsFor`.
+ */
+const verdicts = verdictsFor(report.outcome);
+
+/**
+ * A citation somebody can paste into a paper. Author, title, the corpus, the date it was
+ * posted, the URL, and the licence — which has to be in the string, because a reader who
+ * copies this and drops it into a bibliography is exactly the person who needs to know they
+ * are allowed to.
+ */
+const citation =
+  `${authorName}. "${report.title}". ${SITE.name}, ` +
+  `${longDate(report.createdAt)}. ${canonical}. ${LICENCE.name}.`;
+
+/* The structured answers, assembled by the one function that holds their words. Nulls are
+   skipped rather than shown as "not answered": every one of these is optional and a blank is
+   a real answer. */
+const metadata = countedFacts(report);
+---
+
+<Base title={report.title} description={report.aim}>
+  <div class="shell corpus">
+    <p class="breadcrumb">
+      <a href={path('/reports/')}>← All reports</a>
+    </p>
+
+    <div class="report">
+      {/* Everything a reader might want to quote is inside this element, and the quote
+          affordance looks for exactly that marker. The aside is outside it on purpose: a
+          citation string and a tag list are not passages. */}
+      <div class="report__body" data-quotable data-pagefind-body>
+        {/* Pagefind filter metadata. The type filter uses an explicit value; area and
+            task_type read from the element's text content. */}
+        <span data-pagefind-filter="type:report" hidden></span>
+        <header>
+          <h1>{report.title}</h1>
+
+          <div class="report__status">
+            <StalenessNote staleness={report.staleness} outcome={report.outcome} verbose />
+          </div>
+
+          <ul class="card__facts report__facts" role="list">
+            {/* The Pagefind filter reads the element's text content, so the qualifier goes
+                in a sibling: "Other — reviewing a grant panel's workload" as a filter value
+                would be a facet of one. */}
+            <li data-pagefind-filter="area">{areaLabel(report.area)}</li>
+            {report.area === 'other' && report.areaOther && <li>{report.areaOther}</li>}
+            <li data-pagefind-filter="task_type">{taskTypeLabel(report.taskType)}</li>
+            {
+              report.taskSecondary.length > 0 && (
+                <li>
+                  also {report.taskSecondary.map((task) => taskTypeLabel(task)).join(', ')}
+                </li>
+              )
+            }
+            <li><span class="meta">Posted {longDate(report.createdAt)}</span></li>
+          </ul>
+        </header>
+
+        <section class="field-block">
+          <span class="field-block__label">Tools used</span>
+          <table class="tools-table">
+            <thead>
+              <tr>
+                <th scope="col">Tool</th>
+                <th scope="col">Version</th>
+                <th scope="col">Date used</th>
+                {/* Only when at least one row has one. A column of empty cells is worse
+                    than no column: it reads as data that failed to load. */}
+                {report.tools.some((tool) => tool.role) && <th scope="col">What it did</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {
+                report.tools.map((tool) => (
+                  <tr>
+                    <td>{tool.name}</td>
+                    <td>{tool.version}</td>
+                    <td>{tool.usedOn}</td>
+                    {report.tools.some((other) => other.role) && <td>{tool.role ?? ''}</td>}
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+        </section>
+
+        <section class="field-block">
+          <span class="field-block__label">What they were trying to do</span>
+          <p class="field-block__body">{report.aim}</p>
+        </section>
+
+        <section class="field-block">
+          <span class="field-block__label">What they actually did</span>
+          <p class="field-block__body">{report.method}</p>
+        </section>
+
+        {/* The prompts, above the transcript and outside its disclosure, because this is the
+            part of a report a reader copies. Escaped, monospace, `white-space: pre-wrap`,
+            and no Markdown or TeX — the whole point of the field is that it is verbatim, and
+            rendering `$x$` here would show the reader something other than what was typed. */}
+        {
+          report.prompts && (
+            <section class="field-block">
+              <span class="field-block__label">Prompts</span>
+              <div class="verbatim">
+                <div class="verbatim__head">
+                  <p class="field__hint">
+                    As the author typed them, including any that had to be rewritten.
+                  </p>
+                  <CopyButton text={report.prompts} label="Copy prompts" />
+                </div>
+                <div class="verbatim__body">{report.prompts}</div>
+              </div>
+            </section>
+          )
+        }
+
+        {
+          report.transcriptExcerpt && (
+            <section class="field-block">
+              <span class="field-block__label">Transcript</span>
+
+              <details class="transcript">
+                <summary class="transcript__summary">
+                  Show the excerpt ({report.transcriptExcerpt.length.toLocaleString('en-GB')}{' '}
+                  characters)
+                </summary>
+
+                <div class="transcript__head">
+                  <p class="field__hint">
+                    Pasted by the author, who confirmed that other people's unpublished
+                    material had been removed.
+                  </p>
+                  <CopyButton text={report.transcriptExcerpt} label="Copy transcript" />
+                </div>
+
+                <div class="transcript__body">{report.transcriptExcerpt}</div>
+
+                {report.transcriptUrl && (
+                  <p class="field__hint">
+                    The author also linked to <a href={report.transcriptUrl} rel="nofollow noopener">the original conversation</a>.
+                    Share links expire and get revoked, so the excerpt above is the record.
+                  </p>
+                )}
+              </details>
+            </section>
+          )
+        }
+
+        <section class="field-block field-block--key">
+          <span class="field-block__label">Outcome</span>
+          <p class="field-block__body"><strong>{outcomeLabel(report.outcome)}.</strong> {report.outcomeNotes}</p>
+        </section>
+
+        <section class="field-block">
+          <span class="field-block__label">How this was verified</span>
+          <p class="field-block__body">{report.verification}</p>
+        </section>
+
+        {
+          report.caveats && (
+            <section class="field-block">
+              <span class="field-block__label">What they would tell someone trying this</span>
+              <p class="field-block__body">{report.caveats}</p>
+            </section>
+          )
+        }
+
+        {/* Asked of every outcome, so a failure that taught something reads exactly as a
+            success that did. The answer leads, as the outcome's does, so the block stands on
+            its own; it is also in the facts list, which is the machine-readable place. */}
+        {
+          report.learnedNotes && typeof report.learnedSomething === 'boolean' && (
+            <section class="field-block">
+              <span class="field-block__label">What they learned</span>
+              <p class="field-block__body">
+                <strong>{report.learnedSomething ? 'Something new.' : 'Nothing new.'}</strong>{' '}
+                {report.learnedNotes}
+              </p>
+            </section>
+          )
+        }
+
+        {/* Supporting material. `rel="nofollow noopener"` for the same reason the transcript
+            link carries it: these are links an author chose, not links this site endorses. */}
+        {
+          report.references.length > 0 && (
+            <section class="field-block">
+              <span class="field-block__label">Supporting material</span>
+              <ul class="links" role="list">
+                {report.references.map((reference) => (
+                  <li class="links__item">
+                    <span class="links__kind">{referenceKindLabel(reference.kind)}</span>
+                    <a href={reference.url} rel="nofollow noopener">
+                      {reference.label ?? reference.url}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )
+        }
+
+        {/* Filled in from the browser: the tally on this page is as old as the last build,
+            and "three people say this no longer works" is exactly the kind of number a
+            reader acts on. */}
+        <section class="field-block" id="confirmations" data-pagefind-ignore>
+          <span class="field-block__label">{confirmationQuestion(report.outcome)}</span>
+
+          <div class="confirm" data-confirm data-report-id={report.id} data-outcome={report.outcome}>
+            <p class="confirm__tally" data-confirm-tally>
+              {
+                report.staleness.confirmationCount === 0
+                  ? 'Nobody has confirmed either way.'
+                  : `${report.staleness.confirmationCount} confirmation${report.staleness.confirmationCount === 1 ? '' : 's'} so far.`
+              }
+            </p>
+
+            <div data-confirm-signedout hidden>
+              <p class="field__hint">
+                <a href={path('/account/sign-in/')}>Sign in</a> to say whether this{' '}
+                {VERDICT[verdicts[0]].short}. It is the lightest contribution there is, and
+                it is what stops the corpus quietly going out of date.
+              </p>
+            </div>
+
+            <form class="form" data-confirm-form hidden novalidate>
+              <fieldset class="choices">
+                <legend class="field__label">Have you tried this?</legend>
+                {
+                  verdicts.map((verdict) => (
+                    <label class="choice" for={`verdict-${verdict}`}>
+                      <input
+                        class="choice__input"
+                        type="radio"
+                        id={`verdict-${verdict}`}
+                        name="verdict"
+                        value={verdict}
+                      />
+                      <span>{VERDICT[verdict].label}</span>
+                    </label>
+                  ))
+                }
+              </fieldset>
+
+              <div class="field">
+                <label class="field__label" for="confirm-note">
+                  A sentence about what you saw <span class="field__optional">optional</span>
+                </label>
+                <input class="field__control" type="text" id="confirm-note" maxlength={500} />
+              </div>
+
+              <div class="actions">
+                <button class="button button--primary" type="submit">Add my confirmation</button>
+                <button class="button button--quiet" type="button" data-confirm-withdraw hidden>
+                  Withdraw my confirmation
+                </button>
+              </div>
+
+              <p class="form-status" data-confirm-status role="status" tabindex="-1" hidden></p>
+            </form>
+
+            <ul class="confirm__notes" data-confirm-notes role="list"></ul>
+          </div>
+        </section>
+      </div>
+
+      <aside class="aside">
+        <div class="aside__block">
+          <span class="aside__label">Posted by</span>
+          {
+            report.author ? (
+              <>
+                <p>
+                  <a href={path(`/authors/${report.author.id}/`)}>{report.author.displayName}</a>
+                  {report.author.isPseudonym && <span class="field__hint"> — a pseudonym</span>}
+                </p>
+                <Badges institution={report.author.institution} />
+              </>
+            ) : (
+              <p class="field__hint">
+                This account has since been erased. The contribution stays in the corpus
+                without a name on it, which is what erasure means here.
+              </p>
+            )
+          }
+        </div>
+
+        {
+          report.tags.length > 0 && (
+            <div class="aside__block">
+              <span class="aside__label">Subject areas</span>
+              <ul class="card__tools" role="list">
+                {report.tags.map((tag) => (
+                  <li class="tool-chip tool-chip--tag">
+                    <a href={path(`/reports/?tag=${tag.code}`)}>
+                      <span class="tool-chip__name">{tag.code}</span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )
+        }
+
+        {
+          metadata.length > 0 && (
+            <div class="aside__block">
+              <span class="aside__label">For counting</span>
+              <dl>
+                {metadata.map((entry) => (
+                  <>
+                    <dt>{entry.term}</dt>
+                    <dd>{entry.value}</dd>
+                  </>
+                ))}
+              </dl>
+            </div>
+          )
+        }
+
+        {
+          related.length > 0 && (
+            <div class="aside__block">
+              <span class="aside__label">Related reports</span>
+              <ul class="related-list" role="list">
+                {related.map((r) => (
+                  <li class="related-item">
+                    <a href={path(`/reports/${r.id}/`)}>{r.title}</a>
+                    <span class="related-item__reason">{r.reason}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )
+        }
+
+        <div class="aside__block citation">
+          <span class="aside__label">Cite this</span>
+          <p class="field__hint">
+            Published under <a href={LICENCE.url} rel="license">{LICENCE.name}</a>.
+          </p>
+          <p class="citation__string">{citation}</p>
+          <CopyButton text={citation} label="Copy citation" />
+        </div>
+      </aside>
+    </div>
+
+    <References incoming={incoming} outgoing={outgoing} />
+
+    <div data-pagefind-ignore>
+      <CommentThread
+        parentType="report"
+        parentId={report.id}
+        nodes={thread}
+        title={report.title}
+        href={path(`/reports/${report.id}/`)}
+      />
+    </div>
+  </div>
+</Base>
+
+<script>
+  import { longDate } from '../../lib/format';
+  import {
+    loadConfirmations,
+    saveConfirmation,
+    withdrawConfirmation,
+    type Confirmation,
+  } from '../../lib/reports';
+  import { startSession, subscribeToSession } from '../../lib/session';
+  import { hideStatus, setBusy, showStatus } from '../../lib/forms';
+  import { VERDICT, verdictsFor } from '../../lib/status';
+  import type { Outcome, Verdict } from '../../lib/status';
+
+  const root = document.querySelector<HTMLElement>('[data-confirm]');
+
+  if (root) {
+    const reportId = root.dataset.reportId!;
+    // Safe to read once here, unlike on a view page: this attribute is written into the
+    // HTML at build time, not filled in after a fetch.
+    const pair = verdictsFor(root.dataset.outcome as Outcome);
+    const tally = root.querySelector<HTMLElement>('[data-confirm-tally]')!;
+    const signedOut = root.querySelector<HTMLElement>('[data-confirm-signedout]')!;
+    const form = root.querySelector<HTMLFormElement>('[data-confirm-form]')!;
+    const note = root.querySelector<HTMLInputElement>('#confirm-note')!;
+    const status = root.querySelector<HTMLElement>('[data-confirm-status]')!;
+    const withdraw = root.querySelector<HTMLButtonElement>('[data-confirm-withdraw]')!;
+    const notes = root.querySelector<HTMLElement>('[data-confirm-notes]')!;
+    const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+
+    let viewerId: string | null = null;
+
+    subscribeToSession((state) => {
+      if (state.status === 'loading') return;
+
+      viewerId = state.status === 'signed-in' ? state.userId : null;
+      form.hidden = viewerId === null;
+      signedOut.hidden = viewerId !== null;
+
+      void refresh();
+    });
+
+    void startSession();
+
+    async function refresh(): Promise<void> {
+      const result = await loadConfirmations(reportId, viewerId);
+
+      // The static tally stands if the database cannot be reached. It is a day old at
+      // worst, which is a great deal better than an error where a number should be.
+      if (!result.ok) return;
+
+      const { all, mine } = result.value;
+      // `holds` rather than a comparison against 'still_works': on a report that did not
+      // work the reproducing answer is 'still_fails', and counting only the one name would
+      // file every reproduced failure on the "it changed" side of the tally.
+      const holds = all.filter((one) => VERDICT[one.verdict].holds).length;
+      const changed = all.length - holds;
+
+      tally.textContent = all.length
+        ? `${holds} ${says(holds)} it ${VERDICT[pair[0]].short} · ` +
+          `${changed} ${says(changed)} it ${VERDICT[pair[1]].short}`
+        : 'Nobody has confirmed either way.';
+
+      if (mine) {
+        // Optional rather than asserted: a row carrying the other pair's verdict cannot be
+        // written any more, but one written before the two questions were split would have
+        // no radio to check, and an assertion here would take the whole tally down with it.
+        const own = form.querySelector<HTMLInputElement>(`input[value="${mine.verdict}"]`);
+        if (own) own.checked = true;
+        note.value = mine.note;
+        submit.textContent = 'Update my confirmation';
+        withdraw.hidden = false;
+      } else {
+        submit.textContent = 'Add my confirmation';
+        withdraw.hidden = true;
+      }
+
+      notes.replaceChildren(
+        ...all
+          .filter((one) => one.note)
+          .slice(0, 5)
+          .map(render),
+      );
+    }
+
+    const says = (n: number): string => (n === 1 ? 'says' : 'say');
+
+    function render(confirmation: Confirmation): HTMLLIElement {
+      const item = document.createElement('li');
+      item.className = 'confirm__note';
+
+      const who = document.createElement('span');
+      who.className = 'confirm__who';
+      who.textContent =
+        `${confirmation.displayName}${confirmation.isPseudonym ? ' (pseudonym)' : ''} · ` +
+        `${VERDICT[confirmation.verdict].short} · ` +
+        longDate(confirmation.createdAt);
+
+      const body = document.createElement('span');
+      body.textContent = confirmation.note;
+
+      item.append(who, body);
+      return item;
+    }
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      hideStatus(status);
+
+      const verdict = form.querySelector<HTMLInputElement>('input[name="verdict"]:checked')?.value;
+      if (!verdict || !viewerId) {
+        showStatus(status, 'error', 'Choose one of the two answers before sending.');
+        return;
+      }
+
+      setBusy(submit, true, 'Sending…');
+      const result = await saveConfirmation(reportId, viewerId, verdict as Verdict, note.value);
+      setBusy(submit, false);
+
+      if (!result.ok) {
+        showStatus(status, 'error', result.message);
+        return;
+      }
+
+      await refresh();
+      showStatus(status, 'success', 'Recorded. Thank you — this is what keeps the corpus honest.');
+    });
+
+    withdraw.addEventListener('click', async () => {
+      if (!viewerId) return;
+
+      hideStatus(status);
+      setBusy(withdraw, true, 'Withdrawing…');
+      const result = await withdrawConfirmation(reportId, viewerId);
+      setBusy(withdraw, false);
+
+      if (!result.ok) {
+        showStatus(status, 'error', result.message);
+        return;
+      }
+
+      form.reset();
+      await refresh();
+      showStatus(status, 'notice', 'Withdrawn. Nothing of yours remains on this report.');
+    });
+  }
+</script>
+
+<style>
+  .breadcrumb {
+    margin-block-end: var(--space-md);
+    font-size: var(--size-2);
+  }
+
+  .report__status {
+    margin-block-start: var(--space-md);
+  }
+
+  .report__facts {
+    margin-block-start: var(--space-sm);
+  }
+
+  .meta {
+    font-family: var(--font-mono);
+    font-size: var(--size-1);
+    letter-spacing: var(--tracking-wide);
+  }
+
+  .related-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+  }
+
+  .related-item {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3xs);
+    font-size: var(--size-2);
+  }
+
+  .related-item__reason {
+    font-family: var(--font-mono);
+    font-size: var(--size-1);
+    letter-spacing: var(--tracking-wide);
+    color: var(--ink-muted);
+  }
+</style>

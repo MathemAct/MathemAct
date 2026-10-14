@@ -1,0 +1,184 @@
+---
+/**
+ * Layout for the account pages, and the one place the four session states are handled.
+ *
+ * Every page under /account/ needs the same three things before it can show anything: is
+ * the account system available, is anybody signed in, and is this the right page for them
+ * to be on. Doing that per page produces eight slightly different answers to the same
+ * question, and the one that gets it wrong is a page that tells a signed-out visitor their
+ * password was rejected when the truth is the project has no keys configured.
+ *
+ * The `gate` prop says who the page is for:
+ *
+ *   none        anyone. Signing out, and the confirmation-pending page.
+ *   required    signed in. The profile, the password change, the erasure request.
+ *   anonymous   signed out. Signing up, signing in, asking for a reset link.
+ *
+ * `unavailable` overrides all three, because when accounts do not work the answer to
+ * "should this person see the form" is no, whatever the form is.
+ *
+ * Reading the site never depends on any of this. The session store is imported here and
+ * only here among the layouts, so the Supabase client is bundled into the account pages
+ * and nowhere else — the header decides between "Sign in" and "Account" from a much
+ * cheaper guess. See src/lib/session-hint.ts.
+ */
+import Base from './Base.astro';
+import '../styles/forms.css';
+import { path } from '../lib/paths';
+import { SITE } from '../lib/site';
+
+interface Props {
+  title: string;
+  description?: string;
+  lead?: string;
+  gate?: 'none' | 'required' | 'anonymous';
+}
+
+const { title, description, lead, gate = 'none' } = Astro.props;
+---
+
+<Base title={title} description={description}>
+  <div class="shell account" data-account data-gate={gate}>
+    <header class="account__header">
+      <h1>{title}</h1>
+      {lead && <p class="account__lead">{lead}</p>}
+    </header>
+
+    {/* Accounts are the one part of this site that genuinely cannot work without
+        JavaScript: there is no server to post a form to. Saying so plainly beats a form
+        whose button does nothing. */}
+    <noscript>
+      <div class="panel">
+        <p>
+          Signing in and posting need JavaScript, because this site is static files with no
+          server behind them — the browser talks to the database directly. Everything else
+          here is readable without it.
+        </p>
+      </div>
+    </noscript>
+
+    {/* Nothing is rendered while the answer is unknown. The page title and lead are
+        already on screen, so the page does not look broken, and a "checking…" line that
+        appears and vanishes within a frame is worse than no line at all. */}
+
+    <div class="panel" data-state-panel="unconfigured" hidden>
+      <p>
+        Accounts are not switched on for this deployment yet. Everything on the site is
+        readable without one, and this page starts working the moment they are.
+      </p>
+    </div>
+
+    <div class="panel" data-state-panel="unreachable" hidden>
+      <p>
+        The account service cannot be reached at the moment. Reading the site is
+        unaffected, because pages are served as files and do not depend on it.
+      </p>
+      <p>
+        Try again in a few minutes. If it persists, say so at <a
+          href={`mailto:${SITE.contactEmail}`}>{SITE.contactEmail}</a
+        >.
+      </p>
+    </div>
+
+    <div class="panel" data-state-panel="signed-out" hidden>
+      <p>This page is for signed-in members.</p>
+      <p class="actions">
+        <a class="button button--primary" href={path('/account/sign-in/')}>Sign in</a>
+        <a class="button" href={path('/account/sign-up/')}>Create an account</a>
+      </p>
+    </div>
+
+    <div class="panel" data-state-panel="signed-in" hidden>
+      <p>You are already signed in.</p>
+      <p class="actions">
+        <a class="button button--primary" href={path('/account/')}>Go to your profile</a>
+        <a class="button" href={path('/account/sign-out/')}>Sign out</a>
+      </p>
+    </div>
+
+    <div class="account__body" data-account-body hidden={gate !== 'none'}>
+      <slot />
+    </div>
+  </div>
+</Base>
+
+<script>
+  import { startSession, subscribeToSession } from '../lib/session';
+  import type { SessionState } from '../lib/session';
+
+  function run(root: HTMLElement): void {
+    const gate = root.dataset.gate ?? 'none';
+    const body = root.querySelector<HTMLElement>('[data-account-body]');
+    const panels = new Map<string, HTMLElement>();
+
+    for (const panel of root.querySelectorAll<HTMLElement>('[data-state-panel]')) {
+      panels.set(panel.dataset.statePanel ?? '', panel);
+    }
+
+    function show(panel: string | null, showBody: boolean): void {
+      for (const [name, element] of panels) element.hidden = name !== panel;
+      if (body) body.hidden = !showBody;
+    }
+
+    subscribeToSession((state: SessionState) => {
+      // Published on the root as well, so a page can style or query against the state
+      // without subscribing a second time.
+      root.dataset.session = state.status;
+
+      switch (state.status) {
+        case 'loading':
+          show(null, gate === 'none');
+          return;
+
+        case 'unavailable':
+          show(state.reason, false);
+          return;
+
+        case 'signed-in':
+          show(gate === 'anonymous' ? 'signed-in' : null, gate !== 'anonymous');
+          return;
+
+        case 'signed-out':
+          show(gate === 'required' ? 'signed-out' : null, gate !== 'required');
+          return;
+      }
+    });
+
+    void startSession();
+  }
+
+  const root = document.querySelector<HTMLElement>('[data-account]');
+  if (root) run(root);
+</script>
+
+<style>
+  .account {
+    --shell-width: var(--width-prose);
+    padding-block: var(--space-2xl) var(--space-xl);
+  }
+
+  .account__header {
+    margin-block-end: var(--space-xl);
+    padding-block-end: var(--space-md);
+    border-block-end: var(--border);
+  }
+
+  .account__lead {
+    max-width: var(--measure);
+    margin-block-start: var(--space-sm);
+    font-size: var(--size-4);
+    line-height: var(--leading-relaxed);
+    color: var(--ink-muted);
+    text-wrap: pretty;
+  }
+
+  /* `.account__body`'s own rules are in forms.css, not here. Slotted content is authored
+     in the page rather than in this file, so it carries the page's scope attribute and a
+     scoped `.account__body > * + *` would compile to a selector matching none of it. */
+
+  /* The gate panels are siblings of the body rather than inside it, so the body's own
+     rhythm rule does not reach them. */
+  [data-state-panel] {
+    margin-block-end: var(--space-lg);
+  }
+</style>

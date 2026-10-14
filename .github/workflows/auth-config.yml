@@ -1,0 +1,121 @@
+# Assert that the Supabase dashboard and this repository agree about passwords.
+#
+# The minimum password length exists in two places that cannot see each other. The form
+# enforces `LIMITS.password.min` from src/lib/validation.ts; Supabase Auth enforces its own
+# setting, which lives in a dashboard nobody can grep. Until this workflow existed, nothing
+# noticed when they drifted, and both directions of drift are defects:
+#
+#   dashboard lower than the repo   the form promises "at least 10 characters" and is the
+#                                   only thing enforcing it. The floor is whatever the
+#                                   dashboard says, which is not what anyone was told.
+#   dashboard higher than the repo  the form accepts a password the server then rejects,
+#                                   so the failure lands after the button rather than
+#                                   beside the field.
+#
+# Two triggers, because there are two ways to drift. A push catches someone editing the
+# constant. The schedule catches someone editing the dashboard, which leaves no commit and
+# would otherwise be found by a user.
+#
+# Fork safety, as in migrate.yml: `pull_request` is absent from `on:` by design, and the
+# `if:` below re-states it so that widening the triggers later cannot hand a stranger's
+# branch a token.
+name: Auth config
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/lib/validation.ts'
+      - '.github/workflows/auth-config.yml'
+  schedule:
+    # Monday morning, UTC. Early enough in the week that a drift found here can be fixed
+    # before anyone signs up over the weekend.
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    if: >-
+      github.repository == 'MathemAct/MathemAct'
+      && github.event_name != 'pull_request'
+      && github.event_name != 'pull_request_target'
+    runs-on: ubuntu-latest
+    env:
+      # Comparing a secret against '' evaluates to a plain boolean, so this exposes nothing
+      # while still letting the step below decide whether there is anything to do.
+      HAVE_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN != '' }}
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Without this the job would go green having checked nothing, which for a workflow
+      # whose entire purpose is to notice a mismatch is worse than not having it.
+      - name: Warn if the access token is missing
+        if: env.HAVE_TOKEN != 'true'
+        run: |
+          echo "::warning title=Auth config not checked::SUPABASE_ACCESS_TOKEN is not set, so the dashboard's password setting was not read. Add it under Settings → Secrets and variables → Actions, then re-run this workflow."
+
+      - name: Password length agrees with the dashboard
+        if: env.HAVE_TOKEN == 'true'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          # Public by design; it appears in every request the browser makes.
+          PROJECT_REF: fgnmafmzracdytpfqpel
+        run: |
+          set -euo pipefail
+
+          # Read out of the source rather than out of a build, so the check does not depend
+          # on the site compiling. `|| true` keeps `set -e` from killing the job before the
+          # message below can explain what went wrong.
+          declared=$(grep -oP 'password:\s*\{\s*min:\s*\K[0-9]+' src/lib/validation.ts || true)
+
+          if [ -z "$declared" ]; then
+            echo "::error title=Cannot read the declared minimum::No 'password: { min: N }' found in src/lib/validation.ts. If LIMITS was restructured, update the pattern in this workflow — a check that cannot find its own input must fail rather than pass."
+            exit 1
+          fi
+
+          # Retried: a transient 5xx here would otherwise read as a configuration mismatch,
+          # which is exactly the wrong thing to go and investigate.
+          config=$(curl -sS --fail-with-body \
+            --retry 4 --retry-delay 5 --retry-all-errors \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/${PROJECT_REF}/config/auth")
+
+          actual=$(printf '%s' "$config" | jq -r '.password_min_length // empty')
+
+          if [ -z "$actual" ]; then
+            echo "::error title=No password_min_length in the API response::The Management API returned no such field. Its password-related keys are listed below; update the jq path in this workflow to match."
+            # Key names only. The response also carries SMTP settings, so nothing here
+            # prints a value.
+            printf '%s' "$config" | jq -r 'keys[] | select(test("password"))' || true
+            exit 1
+          fi
+
+          {
+            echo "### Password minimum"
+            echo
+            echo "| Where | Setting | Value |"
+            echo "|---|---|---|"
+            echo "| \`src/lib/validation.ts\` | \`LIMITS.password.min\` | \`$declared\` |"
+            echo "| Supabase dashboard | Minimum password length | \`$actual\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "declared=$declared dashboard=$actual"
+
+          if [ "$declared" != "$actual" ]; then
+            {
+              echo
+              echo "**Mismatch.** Set Authentication → Providers → Email → Minimum password"
+              echo "length to \`$declared\`, or change \`LIMITS.password.min\` to \`$actual\`."
+              echo "See docs/auth.md."
+            } >> "$GITHUB_STEP_SUMMARY"
+
+            echo "::error title=Password minimum does not match::The form enforces ${declared} characters and Supabase Auth enforces ${actual}. Change one of them; docs/auth.md says where."
+            exit 1
+          fi
+
+          echo "::notice title=Password minimum agrees::Both the form and Supabase Auth require ${declared} characters."

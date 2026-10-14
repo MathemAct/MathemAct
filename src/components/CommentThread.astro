@@ -1,0 +1,1009 @@
+---
+/**
+ * The discussion under a report or a claim.
+ *
+ * One component for both, because a thread is a thread — the only thing that differs is
+ * what it is attached to, which is two props. Anything that made the report thread and
+ * the claim thread separate components would guarantee they drifted, and the whole
+ * argument for citations is that the two halves of the site are one thing.
+ *
+ * What is rendered when
+ * ---------------------
+ * Everything in the corpus at build time is here as sanitised HTML with its formulas
+ * already set, from src/lib/markdown.ts. Anything written, edited or deleted since — by this
+ * reader, or found by the overlay — is set in the browser by the same pipeline, through
+ * src/lib/render-live.ts, which is fetched only when there is something to set. This header
+ * used to call showing those as plain source "not a compromise waiting to be fixed"; it was
+ * reversed on 2026-10-11, because to somebody who had just posted, source read as a broken
+ * site. See the header of src/lib/comments.ts.
+ *
+ * The composer moves rather than multiplying. Clicking Reply relocates the same form into
+ * that comment's subtree, so there is one textarea, one counter and one set of ids on the
+ * page however long the thread gets.
+ */
+import Badges from './Badges.astro';
+import { longDate } from '../lib/format';
+import { exportedAt } from '../lib/manifest';
+import { renderMarkdown } from '../lib/markdown';
+import { path } from '../lib/paths';
+import type { CommentNode, ParentType } from '../lib/comments';
+
+interface Props {
+  parentType: ParentType;
+  parentId: string;
+  nodes: readonly CommentNode[];
+  /** This page's own title and URL, so a passage selected here knows where it came from. */
+  title: string;
+  href: string;
+}
+
+const { parentType, parentId, nodes, title, href }: Props = Astro.props;
+
+// Rendered up front rather than inside the template, because `set:html` cannot await and
+// because doing it once per comment here makes the two passes over the tree below cheap.
+const rendered = new Map<string, string>();
+
+for (const node of nodes) {
+  for (const comment of [node.comment, ...node.replies]) {
+    rendered.set(comment.id, comment.deletedAt ? '' : await renderMarkdown(comment.body));
+  }
+}
+
+const total = nodes.reduce((count, node) => count + 1 + node.replies.length, 0);
+---
+
+<section
+  class="thread"
+  id="discussion"
+  data-thread
+  data-parent-type={parentType}
+  data-parent-id={parentId}
+  data-node-title={title}
+  data-node-href={href}
+  data-propose-href={path('/opinions/new/')}
+  data-exported-at={exportedAt() ?? ''}
+>
+  <div class="thread__head">
+    <h2>Discussion</h2>
+    <p class="thread__count meta" data-thread-count>
+      {total === 0 ? 'No comments yet' : `${total} comment${total === 1 ? '' : 's'}`}
+    </p>
+  </div>
+
+  <ol class="thread__list" data-thread-list role="list">
+    {
+      nodes.map((node) => (
+        <li
+          class="comment"
+          id={`comment-${node.comment.id}`}
+          data-comment-id={node.comment.id}
+          data-comment-author={node.comment.author?.id ?? ''}
+          data-comment-created={node.comment.createdAt}
+        >
+          <div class="comment__head">
+            <span class="comment__who">
+              {node.comment.deletedAt
+                ? 'Removed'
+                : (node.comment.author?.displayName ?? 'A former member')}
+              {!node.comment.deletedAt && node.comment.author?.isPseudonym && (
+                <span class="comment__pseudonym"> — a pseudonym</span>
+              )}
+            </span>
+            <a class="comment__permalink meta" href={`#comment-${node.comment.id}`}>
+              {longDate(node.comment.createdAt)}
+            </a>
+          </div>
+
+          {!node.comment.deletedAt && node.comment.author?.institution && (
+            <div class="comment__badges">
+              <Badges institution={node.comment.author.institution} compact />
+            </div>
+          )}
+
+          {node.comment.deletedAt ? (
+            <p class="comment__removed">
+              Removed by its author. The replies stay, so the exchange still reads.
+            </p>
+          ) : (
+            <div
+              class="comment__body markdown"
+              data-comment-body
+              data-quotable
+              set:html={rendered.get(node.comment.id)}
+            />
+          )}
+
+          <div class="comment__actions" data-comment-actions>
+            <button class="link-button" type="button" data-action="reply" hidden>Reply</button>
+            <button class="link-button" type="button" data-action="edit" hidden>Edit</button>
+            <button class="link-button" type="button" data-action="delete" hidden>Delete</button>
+            <button class="link-button" type="button" data-action="flag" hidden>Flag</button>
+          </div>
+
+          <div class="comment__slot" data-comment-slot />
+
+          <ol class="comment__replies" data-comment-replies role="list">
+            {node.replies.map((reply) => (
+              <li
+                class="comment comment--reply"
+                id={`comment-${reply.id}`}
+                data-comment-id={reply.id}
+                data-comment-author={reply.author?.id ?? ''}
+                data-comment-created={reply.createdAt}
+              >
+                <div class="comment__head">
+                  <span class="comment__who">
+                    {reply.deletedAt
+                      ? 'Removed'
+                      : (reply.author?.displayName ?? 'A former member')}
+                    {!reply.deletedAt && reply.author?.isPseudonym && (
+                      <span class="comment__pseudonym"> — a pseudonym</span>
+                    )}
+                  </span>
+                  <a class="comment__permalink meta" href={`#comment-${reply.id}`}>
+                    {longDate(reply.createdAt)}
+                  </a>
+                </div>
+
+                {!reply.deletedAt && reply.author?.institution && (
+                  <div class="comment__badges">
+                    <Badges institution={reply.author.institution} compact />
+                  </div>
+                )}
+
+                {reply.deletedAt ? (
+                  <p class="comment__removed">Removed by its author.</p>
+                ) : (
+                  <div
+                    class="comment__body markdown"
+                    data-comment-body
+                    data-quotable
+                    set:html={rendered.get(reply.id)}
+                  />
+                )}
+
+                <div class="comment__actions" data-comment-actions>
+                  <button class="link-button" type="button" data-action="edit" hidden>Edit</button>
+                  <button class="link-button" type="button" data-action="delete" hidden>Delete</button>
+                  <button class="link-button" type="button" data-action="flag" hidden>Flag</button>
+                </div>
+
+                <div class="comment__slot" data-comment-slot />
+              </li>
+            ))}
+          </ol>
+        </li>
+      ))
+    }
+  </ol>
+
+  <div class="composer" data-composer>
+    <div class="panel" data-composer-signedout hidden>
+      <p>
+        <a href={path('/account/sign-in/')}>Sign in</a> to take part. Comments carry markdown
+        and TeX, and go up under your name.
+      </p>
+    </div>
+
+    <div class="panel" data-composer-unconfirmed hidden>
+      <p>
+        Commenting needs a confirmed email address.
+        <a href={path('/account/confirm/')}>Get another confirmation link</a>.
+      </p>
+    </div>
+
+    <form class="form" data-composer-form hidden novalidate>
+      {/* Only ever visible when a passage was carried here from somewhere else. Quoting
+          within one page is an ordinary quotation and records nothing. */}
+      <div class="quote-strip" data-quote-strip hidden>
+        <p class="quote-strip__label meta">Quoting</p>
+        <blockquote class="quote-strip__text" data-quote-text></blockquote>
+        <p class="quote-strip__source">
+          from <a data-quote-source href="#"></a>
+        </p>
+        <p class="field__hint">
+          Posting this will record the reference, so it shows in that page's
+          <strong>referenced by</strong> list.
+        </p>
+        <button class="link-button" type="button" data-quote-discard>Post without the reference</button>
+      </div>
+
+      <div class="field">
+        <label class="field__label" for="comment-body" data-composer-label>
+          Add to the discussion
+        </label>
+        <div class="field__hint" id="comment-body-hint">
+          <p>
+            Markdown, and TeX between dollar signs: <code>$\pi_1(X)$</code>.
+          </p>
+        </div>
+        <textarea
+          class="field__control"
+          id="comment-body"
+          name="comment-body"
+          rows={5}
+          maxlength={5000}
+          aria-describedby="comment-body-hint comment-body-error"></textarea>
+        <p class="field__counter" data-counter-for="comment-body" data-max="5000">
+          <span data-counter-value>0</span> / 5000
+        </p>
+        <p class="field__error" id="comment-body-error" hidden></p>
+      </div>
+
+      <div class="actions">
+        <button class="button button--primary" type="submit">Post</button>
+        <button class="button button--quiet" type="button" data-composer-cancel hidden>
+          Cancel reply
+        </button>
+      </div>
+
+      <p class="form-status" data-composer-status role="status" tabindex="-1" hidden></p>
+
+    </form>
+  </div>
+</section>
+
+<script>
+  import { countUnread } from '../lib/activity';
+  import { setActivityHint } from '../lib/activity-hint';
+  import { createCitation } from '../lib/citations';
+  import {
+    deleteComment,
+    editComment,
+    fileFlag,
+    loadComment,
+    loadThread,
+    postComment,
+    FLAG_REASONS,
+    type Comment,
+    type ParentType,
+    type FlagReason,
+  } from '../lib/comments';
+  import { longDate } from '../lib/format';
+  import { hideStatus, query, setBusy, showStatus } from '../lib/forms';
+  import { loadProfile, mayPost } from '../lib/profile';
+  import {
+    asMarkdown,
+    clearPassage,
+    getPassage,
+    installQuoteAffordance,
+    type Passage,
+  } from '../lib/quote';
+  import { setRendered } from '../lib/render-live';
+  import { startSession, subscribeToSession } from '../lib/session';
+
+  /** Added to a body the browser could not set — the renderer's chunk failed to load — so it
+   *  reads as source rather than as a broken formula. */
+  const SOURCE = 'comment__body--source';
+
+  const threadRoot = document.querySelector<HTMLElement>('[data-thread]');
+
+  if (threadRoot) {
+    /**
+     * The same element, aliased so that the null check above survives into everything below.
+     *
+     * TypeScript keeps a `const` narrowing inside arrow functions but drops it inside hoisted
+     * `function` declarations — the declaration is lifted to the top of the block, so the
+     * compiler will not assume the `if` has run. Every `root.` inside `showAttachment()` and
+     * `overlay()` was therefore an error, and the file had picked up four `root!` assertions
+     * where somebody had hit one and silenced it, plus two places where they had not. Aliasing
+     * fixes all six at the declaration instead of at each use.
+     *
+     * Do not turn this into `const parentId = root.dataset.parentId`. On a view page the id is
+     * written after a fetch and read at call time on purpose; capturing it here is a bug this
+     * component has already had.
+     */
+    const root = threadRoot;
+
+    const parentType = root.dataset.parentType as ParentType;
+
+    const list = query<HTMLElement>('[data-thread-list]', root);
+    const countLabel = query<HTMLElement>('[data-thread-count]', root);
+    const composer = query<HTMLElement>('[data-composer]', root);
+    const signedOut = query<HTMLElement>('[data-composer-signedout]', root);
+    const unconfirmed = query<HTMLElement>('[data-composer-unconfirmed]', root);
+    const form = query<HTMLFormElement>('[data-composer-form]', root);
+    const body = query<HTMLTextAreaElement>('#comment-body', root);
+    const label = query<HTMLElement>('[data-composer-label]', root);
+    const status = query<HTMLElement>('[data-composer-status]', root);
+    const submit = query<HTMLButtonElement>('button[type="submit"]', form);
+    const cancel = query<HTMLButtonElement>('[data-composer-cancel]', root);
+    const strip = query<HTMLElement>('[data-quote-strip]', root);
+
+    /** Null at the bottom of the thread; a comment id when replying. */
+    let replyingTo: string | null = null;
+    let viewerId: string | null = null;
+    /** A passage carried from another page. Cleared once it has been used or discarded. */
+    let attached: Passage | null = null;
+
+    // ── The carried passage ───────────────────────────────────────────────────────────
+
+    function showAttachment(): void {
+      const passage = getPassage();
+
+      // A passage taken from this very page is an ordinary quotation: the text is already
+      // in the box, and a citation from a page to itself is refused by the database and
+      // would be noise in the referenced-by block if it were not.
+      attached = passage && passage.sourceId !== root.dataset.parentId ? passage : null;
+
+      strip.hidden = attached === null;
+      if (!attached) return;
+
+      query<HTMLElement>('[data-quote-text]', strip).textContent = attached.text;
+
+      const link = query<HTMLAnchorElement>('[data-quote-source]', strip);
+      link.textContent = attached.sourceTitle;
+      link.href = attached.commentId
+        ? `${attached.sourceHref}#comment-${attached.commentId}`
+        : attached.sourceHref;
+    }
+
+    query<HTMLButtonElement>('[data-quote-discard]', strip).addEventListener('click', () => {
+      clearPassage();
+      attached = null;
+      strip.hidden = true;
+      body.focus();
+    });
+
+    // ── Session ───────────────────────────────────────────────────────────────────────
+
+    subscribeToSession((state) => {
+      if (state.status === 'loading') return;
+
+      if (state.status !== 'signed-in') {
+        viewerId = null;
+        signedOut.hidden = false;
+        unconfirmed.hidden = true;
+        form.hidden = true;
+        applyViewer();
+        return;
+      }
+
+      if (viewerId === state.userId) return;
+      viewerId = state.userId;
+      void open(state.userId);
+
+      // The only place outside /account/ that refreshes the notification count, and the
+      // reason it is worth doing here: a report or claim page is where a signed-in person
+      // actually spends time, and this page has already paid for the Supabase client. The
+      // listings have not and never will, so without this the header's badge would only
+      // ever update on a visit to the profile. One head count, no rows.
+      void countUnread(state.userId).then(setActivityHint);
+    });
+
+    void startSession();
+
+    // On static pages parentId is baked into the HTML; on view pages it is set
+    // asynchronously after a fetch. Fire overlay only once the id is in place. A static page
+    // asks only for what changed after the export it was built from; a view page has no build
+    // and asks for the whole thread.
+    if (root.dataset.parentId) {
+      void overlay(root.dataset.exportedAt || null);
+    } else {
+      root.addEventListener('thread-ready', () => void overlay(null), { once: true });
+    }
+
+    async function open(id: string): Promise<void> {
+      const profile = await loadProfile(id);
+
+      signedOut.hidden = true;
+
+      if (profile.ok && !mayPost(profile.value)) {
+        unconfirmed.hidden = false;
+        form.hidden = true;
+        applyViewer();
+        return;
+      }
+
+      unconfirmed.hidden = true;
+      form.hidden = false;
+      showAttachment();
+      applyViewer();
+    }
+
+    /**
+     * Which controls each comment offers this reader.
+     *
+     * Recomputed rather than rendered, because the page is static and identical for
+     * everybody: whose comment is whose is a fact only the browser has. Edit appears under
+     * the same two conditions the guard trigger enforces, so the button is offered exactly
+     * when pressing it would work.
+     */
+    function applyViewer(): void {
+      for (const item of list.querySelectorAll<HTMLElement>('[data-comment-id]')) {
+        const author = item.dataset.commentAuthor ?? '';
+        const created = Date.parse(item.dataset.commentCreated ?? '');
+        const mine = viewerId !== null && author === viewerId;
+        // `:scope >` throughout, and it is load-bearing. A comment contains its replies, so
+        // a plain descendant selector on a top-level comment finds the first reply's body,
+        // actions and slot — which would offer a moderator's Delete on somebody else's
+        // reply and read, in review, exactly like working code.
+        const removed = item.querySelector(':scope > [data-comment-body]') === null;
+        const hasReplies =
+          (item.querySelector(':scope > [data-comment-replies]')?.childElementCount ?? 0) > 0;
+        const withinWindow =
+          Number.isFinite(created) && Date.now() - created < 24 * 60 * 60 * 1000;
+
+        const actions = item.querySelector<HTMLElement>(':scope > [data-comment-actions]');
+        if (!actions) continue;
+
+        for (const control of actions.querySelectorAll<HTMLButtonElement>('[data-action]')) {
+          switch (control.dataset.action) {
+            case 'reply':
+              control.hidden = viewerId === null || removed;
+              break;
+            case 'edit':
+              control.hidden = !mine || removed || hasReplies || !withinWindow;
+              break;
+            case 'delete':
+              control.hidden = !mine || removed;
+              break;
+            case 'flag':
+              control.hidden = viewerId === null || mine || removed;
+              break;
+          }
+        }
+      }
+    }
+
+    // ── The freshness overlay ─────────────────────────────────────────────────────────
+
+    /**
+     * What changed since the build, applied: new comments appended, edits set in place,
+     * deletions turned into the removed note.
+     *
+     * The site rebuilds within minutes of a write, but a reader can arrive inside those
+     * minutes or hold a copy their browser cached, and this is what keeps them from seeing a
+     * thread without the reply they were told about. Usually it finds nothing. This used to
+     * add only, leaving edits and deletions as built until the next build — a day, then.
+     * Failure is silent: the built thread stands.
+     */
+    async function overlay(since: string | null): Promise<void> {
+      const result = await loadThread(parentType, root.dataset.parentId!, since);
+      if (!result.ok) return;
+
+      let changed = 0;
+
+      for (const comment of result.value) {
+        const existing = itemFor(comment.id);
+
+        if (!existing) {
+          place(render(comment));
+          changed += 1;
+        } else if (since) {
+          await patch(existing, comment);
+          changed += 1;
+        }
+      }
+
+      if (changed > 0) {
+        recount();
+        applyViewer();
+        markTarget();
+      }
+    }
+
+    /** A built comment, changed since: deleted, or edited. Setting the same text again — a
+     *  row can be back here for another reason — is harmless. */
+    async function patch(item: HTMLElement, comment: Comment): Promise<void> {
+      if (comment.deletedAt) {
+        if (item.querySelector(':scope > [data-comment-body]')) markRemoved(item);
+        return;
+      }
+
+      const text = item.querySelector<HTMLElement>(':scope > [data-comment-body]');
+      if (text && text.dataset.source !== comment.body) {
+        text.dataset.source = comment.body;
+        await setRendered(text, comment.body, SOURCE);
+      }
+    }
+
+    /** The element for a comment id, or null. Ids are unique, so a plain lookup is right
+     *  here — the `:scope >` care is only needed once you have the element. */
+    function itemFor(id: string): HTMLElement | null {
+      return root.querySelector<HTMLElement>(`[data-comment-id="${CSS.escape(id)}"]`);
+    }
+
+    function place(item: HTMLLIElement): void {
+      const parent = item.dataset.commentReplyTo;
+      const replies = parent
+        ? (itemFor(parent)?.querySelector<HTMLElement>(':scope > [data-comment-replies]') ??
+          null)
+        : null;
+
+      // A reply whose parent is not on the page lands at top level rather than nowhere.
+      // Losing a remark is worse than showing it at the wrong indent.
+      (replies ?? list).append(item);
+    }
+
+    function recount(): void {
+      const total = list.querySelectorAll('[data-comment-id]').length;
+      countLabel.textContent =
+        total === 0 ? 'No comments yet' : `${total} comment${total === 1 ? '' : 's'}`;
+    }
+
+    /**
+     * A comment that was not in the build, as DOM.
+     *
+     * The body is set by `setRendered()`, which runs the build's own sanitising pipeline in the
+     * browser and only then uses `innerHTML`. Until that resolves, and for good if it fails, the
+     * text is in as written through `textContent` — unrendered text has been through no
+     * sanitiser, so that path must never become `innerHTML`.
+     */
+    function render(comment: Comment): HTMLLIElement {
+      const item = document.createElement('li');
+      item.className = comment.inReplyTo ? 'comment comment--reply' : 'comment';
+      item.id = `comment-${comment.id}`;
+      item.dataset.commentId = comment.id;
+      item.dataset.commentAuthor = comment.author?.id ?? '';
+      item.dataset.commentCreated = comment.createdAt;
+      if (comment.inReplyTo) item.dataset.commentReplyTo = comment.inReplyTo;
+
+      const head = document.createElement('div');
+      head.className = 'comment__head';
+
+      const who = document.createElement('span');
+      who.className = 'comment__who';
+      who.textContent = comment.deletedAt
+        ? 'Removed'
+        : (comment.author?.displayName ?? 'A former member');
+      if (!comment.deletedAt && comment.author?.isPseudonym) {
+        const note = document.createElement('span');
+        note.className = 'comment__pseudonym';
+        note.textContent = ' — a pseudonym';
+        who.append(note);
+      }
+
+      const when = document.createElement('a');
+      when.className = 'comment__permalink meta';
+      when.href = `#comment-${comment.id}`;
+      when.textContent = longDate(comment.createdAt);
+
+      head.append(who, when);
+      item.append(head);
+
+      if (comment.deletedAt) {
+        const removed = document.createElement('p');
+        removed.className = 'comment__removed';
+        removed.textContent = 'Removed by its author.';
+        item.append(removed);
+      } else {
+        const text = document.createElement('div');
+        text.className = 'comment__body markdown';
+        text.dataset.commentBody = '';
+        text.dataset.quotable = '';
+        text.dataset.source = comment.body;
+        text.textContent = comment.body;
+        item.append(text);
+        void setRendered(text, comment.body, SOURCE);
+      }
+
+      const actions = document.createElement('div');
+      actions.className = 'comment__actions';
+      actions.dataset.commentActions = '';
+
+      for (const action of comment.inReplyTo
+        ? ['edit', 'delete', 'flag']
+        : ['reply', 'edit', 'delete', 'flag']) {
+        const control = document.createElement('button');
+        control.type = 'button';
+        control.className = 'link-button';
+        control.dataset.action = action;
+        control.textContent = action[0]!.toUpperCase() + action.slice(1);
+        control.hidden = true;
+        actions.append(control);
+      }
+
+      item.append(actions);
+
+      const slot = document.createElement('div');
+      slot.className = 'comment__slot';
+      slot.dataset.commentSlot = '';
+      item.append(slot);
+
+      if (!comment.inReplyTo) {
+        const replies = document.createElement('ol');
+        replies.className = 'comment__replies';
+        replies.dataset.commentReplies = '';
+        replies.setAttribute('role', 'list');
+        item.append(replies);
+      }
+
+      return item;
+    }
+
+    // ── Per-comment controls ──────────────────────────────────────────────────────────
+
+    list.addEventListener('click', (event) => {
+      const control = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-action]');
+      if (!control) return;
+
+      const item = control.closest<HTMLElement>('[data-comment-id]');
+      if (!item) return;
+
+      switch (control.dataset.action) {
+        case 'reply':
+          moveComposer(item.dataset.commentId!);
+          break;
+        case 'edit':
+          openEditor(item);
+          break;
+        case 'delete':
+          void remove(item);
+          break;
+        case 'flag':
+          openFlag(item);
+          break;
+      }
+    });
+
+    /**
+     * Move the one composer to where the next comment goes.
+     *
+     * `target` is resolved to the top-level comment of its exchange, because nesting stops
+     * at one level and the database refuses a reply to a reply. The quote affordance can
+     * pass a reply's id — you selected text inside one — and without this that turns into
+     * a post button that fails with a constraint message.
+     */
+    function moveComposer(target: string | null): void {
+      hideStatus(status);
+
+      const item = target ? itemFor(target) : null;
+      const top =
+        item && item.parentElement?.hasAttribute('data-comment-replies')
+          ? item.parentElement.closest<HTMLElement>('[data-comment-id]')
+          : item;
+
+      replyingTo = top?.dataset.commentId ?? null;
+
+      if (!top) {
+        root.append(composer);
+        label.textContent = 'Add to the discussion';
+        submit.textContent = 'Post';
+        cancel.hidden = true;
+      } else {
+        const slot = top.querySelector<HTMLElement>(':scope > [data-comment-slot]');
+        if (!slot) return;
+
+        slot.append(composer);
+        label.textContent = 'Your reply';
+        submit.textContent = 'Post reply';
+        cancel.hidden = false;
+      }
+
+      if (!form.hidden) body.focus();
+    }
+
+    cancel.addEventListener('click', () => moveComposer(null));
+
+    /** Editing happens in place, in a textarea with no id — there is exactly one composer
+     *  on the page and its id must stay unique. */
+    function openEditor(item: HTMLElement): void {
+      const slot = query<HTMLElement>(':scope > [data-comment-slot]', item);
+      const text = item.querySelector<HTMLElement>(':scope > [data-comment-body]');
+      if (!text) return;
+
+      const editor = document.createElement('form');
+      editor.className = 'form comment__editor';
+
+      const area = document.createElement('textarea');
+      area.className = 'field__control';
+      area.rows = 5;
+      area.maxLength = 5000;
+      area.setAttribute('aria-label', 'Edit your comment');
+      // The source, not the page's text: the built HTML is rendered markdown, and editing its
+      // `textContent` would quietly rewrite every formula as plain text. A comment set in the
+      // browser carries its source; a built one is read, read-only until it arrives so nothing
+      // typed is overwritten. If the read fails the rendered text is what is left.
+      area.value = text.dataset.source ?? '';
+      if (text.dataset.source === undefined) {
+        area.readOnly = true;
+        void loadComment(item.dataset.commentId!).then((loaded) => {
+          area.value = loaded.ok ? loaded.value.body : (text.textContent ?? '').trim();
+          area.readOnly = false;
+          area.focus();
+        });
+      }
+
+      const actions = document.createElement('div');
+      actions.className = 'actions';
+
+      const save = document.createElement('button');
+      save.type = 'submit';
+      save.className = 'button button--primary';
+      save.textContent = 'Save';
+
+      const abandon = document.createElement('button');
+      abandon.type = 'button';
+      abandon.className = 'button button--quiet';
+      abandon.textContent = 'Cancel';
+
+      const message = document.createElement('p');
+      message.className = 'form-status';
+      message.setAttribute('role', 'status');
+      message.tabIndex = -1;
+      message.hidden = true;
+
+      actions.append(save, abandon);
+      editor.append(area, actions, message);
+      slot.replaceChildren(editor);
+      area.focus();
+
+      abandon.addEventListener('click', () => slot.replaceChildren());
+
+      editor.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        hideStatus(message);
+
+        if (area.value.trim().length === 0) {
+          showStatus(message, 'error', 'A comment has to say something.');
+          return;
+        }
+
+        setBusy(save, true, 'Saving…');
+        const result = await editComment(item.dataset.commentId!, area.value);
+        setBusy(save, false);
+
+        if (!result.ok) {
+          showStatus(message, 'error', result.message);
+          return;
+        }
+
+        const source = area.value.trim();
+        text.dataset.source = source;
+        slot.replaceChildren();
+        await setRendered(text, source, SOURCE);
+      });
+    }
+
+    async function remove(item: HTMLElement): Promise<void> {
+      // A real confirm(), because this is the one action on the site that destroys text.
+      // The wording says what is kept and what is not, since "are you sure" answers
+      // neither question.
+      const sure = window.confirm(
+        'Delete this comment?\n\n' +
+          'The text is removed for good and your name comes off it. Nothing is kept to ' +
+          'restore. The comment stays in the thread as a removed note so the replies ' +
+          'under it still read.',
+      );
+      if (!sure) return;
+
+      const result = await deleteComment(item.dataset.commentId!);
+      if (!result.ok) {
+        showStatus(status, 'error', result.message);
+        return;
+      }
+
+      markRemoved(item);
+      applyViewer();
+    }
+
+    /** What a deleted comment looks like, applied in the browser — after deleting one here, or
+     *  when the overlay finds one deleted since the build. */
+    function markRemoved(item: HTMLElement): void {
+      item.querySelector(':scope > [data-comment-body]')?.remove();
+      item.querySelector(':scope > .comment__badges')?.remove();
+      item.querySelector<HTMLElement>(':scope > [data-comment-slot]')?.replaceChildren();
+
+      const removed = document.createElement('p');
+      removed.className = 'comment__removed';
+      removed.textContent = 'Removed by its author.';
+      item.querySelector(':scope > [data-comment-actions]')!.before(removed);
+
+      query<HTMLElement>(':scope > .comment__head > .comment__who', item).textContent = 'Removed';
+      item.dataset.commentAuthor = '';
+    }
+
+    function openFlag(item: HTMLElement): void {
+      const slot = query<HTMLElement>(':scope > [data-comment-slot]', item);
+
+      const flagForm = document.createElement('form');
+      flagForm.className = 'form comment__flag';
+
+      const legend = document.createElement('p');
+      legend.className = 'field__label';
+      legend.textContent = 'Flag this to the moderators';
+
+      const select = document.createElement('select');
+      select.className = 'field__control';
+      select.setAttribute('aria-label', 'Why you are flagging this');
+      for (const reason of FLAG_REASONS) {
+        const option = document.createElement('option');
+        option.value = reason.value;
+        option.textContent = reason.label;
+        select.append(option);
+      }
+
+      const detail = document.createElement('input');
+      detail.type = 'text';
+      detail.className = 'field__control';
+      detail.maxLength = 1000;
+      detail.placeholder = 'Anything the moderators should know (optional)';
+      detail.setAttribute('aria-label', 'Anything the moderators should know, optional');
+
+      const hint = document.createElement('p');
+      hint.className = 'field__hint';
+      hint.textContent =
+        'Flags are read by volunteers and are never shown on the page. Nothing about ' +
+        'flagging is visible to the person you flag.';
+
+      const actions = document.createElement('div');
+      actions.className = 'actions';
+
+      const send = document.createElement('button');
+      send.type = 'submit';
+      send.className = 'button button--primary';
+      send.textContent = 'Send flag';
+
+      const abandon = document.createElement('button');
+      abandon.type = 'button';
+      abandon.className = 'button button--quiet';
+      abandon.textContent = 'Cancel';
+
+      const message = document.createElement('p');
+      message.className = 'form-status';
+      message.setAttribute('role', 'status');
+      message.tabIndex = -1;
+      message.hidden = true;
+
+      actions.append(send, abandon);
+      flagForm.append(legend, select, detail, hint, actions, message);
+      slot.replaceChildren(flagForm);
+      select.focus();
+
+      abandon.addEventListener('click', () => slot.replaceChildren());
+
+      flagForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        hideStatus(message);
+
+        if (!viewerId) return;
+
+        setBusy(send, true, 'Sending…');
+        const result = await fileFlag(
+          'comment',
+          item.dataset.commentId!,
+          viewerId,
+          select.value as FlagReason,
+          detail.value,
+        );
+        setBusy(send, false);
+
+        if (!result.ok) {
+          showStatus(message, 'error', result.message);
+          return;
+        }
+
+        slot.replaceChildren();
+        showStatus(
+          status,
+          'notice',
+          'Flagged. A moderator will look at it and write you what they decided, either way.',
+        );
+      });
+    }
+
+    // ── Posting ───────────────────────────────────────────────────────────────────────
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      hideStatus(status);
+
+      if (!viewerId) return;
+
+      if (body.value.trim().length === 0) {
+        showStatus(status, 'error', 'A comment has to say something before it can be posted.');
+        return;
+      }
+
+      setBusy(submit, true, 'Posting…');
+      const posted = await postComment(parentType, root.dataset.parentId!, viewerId, body.value, replyingTo);
+
+      if (!posted.ok) {
+        setBusy(submit, false);
+        showStatus(status, 'error', posted.message);
+        return;
+      }
+
+      // The reference is recorded second, against the comment that now exists. If it fails
+      // the comment still stands: the contribution is the text, and the citation is the
+      // index entry. Saying so is better than rolling back something already written.
+      let citationFailed: string | null = null;
+
+      if (attached) {
+        const linked = await createCitation(
+          {
+            sourceType: parentType,
+            sourceId: root.dataset.parentId!,
+            sourceCommentId: posted.value.id,
+            targetType: attached.sourceType,
+            targetId: attached.sourceId,
+            targetCommentId: attached.commentId,
+            excerpt: attached.text,
+          },
+          viewerId,
+        );
+
+        if (!linked.ok) citationFailed = linked.message;
+        clearPassage();
+        attached = null;
+        strip.hidden = true;
+      }
+
+      setBusy(submit, false);
+
+      place(render(posted.value));
+      recount();
+      applyViewer();
+
+      body.value = '';
+      updateCounter();
+      moveComposer(null);
+
+      showStatus(
+        status,
+        citationFailed ? 'notice' : 'success',
+        citationFailed ?? 'Posted.',
+      );
+    });
+
+    // ── Odds and ends ─────────────────────────────────────────────────────────────────
+
+    function updateCounter(): void {
+      const counter = root.querySelector<HTMLElement>('[data-counter-for="comment-body"]');
+      if (!counter) return;
+
+      const max = Number(counter.dataset.max);
+      const used = body.value.length;
+
+      counter.querySelector('[data-counter-value]')!.textContent = String(used);
+      if (used > max * 0.9) counter.dataset.near = '';
+      else delete counter.dataset.near;
+    }
+
+    body.addEventListener('input', updateCounter);
+
+    /** A permalink arriving from another page has to land somewhere that reads as arrived
+     *  at, or a long thread looks identical to not having jumped at all. */
+    function markTarget(): void {
+      for (const item of list.querySelectorAll('.comment--targeted')) {
+        item.classList.remove('comment--targeted');
+      }
+
+      const id = location.hash.replace(/^#/, '');
+      if (!id.startsWith('comment-')) return;
+
+      document.getElementById(id)?.classList.add('comment--targeted');
+    }
+
+    window.addEventListener('hashchange', markTarget);
+    markTarget();
+
+    installQuoteAffordance({
+      nodeType: parentType,
+      nodeId: root.dataset.parentId!,
+      title: root.dataset.nodeTitle!,
+      href: root.dataset.nodeHref!,
+      proposeHref: root.dataset.proposeHref!,
+      quoteHere: (passage) => {
+        if (form.hidden) {
+          composer.scrollIntoView({ block: 'center' });
+          return false;
+        }
+
+        // Quoting a comment puts the composer under that exchange, which is nearly always
+        // what was meant. moveComposer resolves a reply to the comment that started it.
+        moveComposer(passage.commentId ?? null);
+
+        const quotation = asMarkdown(passage);
+        body.value = quotation + body.value;
+        updateCounter();
+        body.focus();
+        // The caret goes after the quotation rather than at the very end, so the next thing
+        // typed is the answer to it.
+        body.setSelectionRange(quotation.length, quotation.length);
+        return true;
+      },
+    });
+  }
+</script>

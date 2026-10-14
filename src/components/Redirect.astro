@@ -1,0 +1,46 @@
+---
+/**
+ * A page that only sends the reader somewhere else.
+ *
+ * GitHub Pages cannot answer with a 301, so an address that moved needs a real file at the
+ * old path. This is that file: a bare document, deliberately not the Base layout, because
+ * it is not a page anybody should see for longer than a refresh. Used by the stubs in
+ * src/pages/debates/, which kept the addresses from before the section was renamed to
+ * Opinions on 2026-10-12.
+ *
+ * Three ways out, strongest first:
+ *   - the script, which carries the query string and the fragment across, so that
+ *     `?position=8` and `#comment-<id>` — addresses the activity feed handed out — still
+ *     land where they pointed;
+ *   - the meta refresh, for a reader with JavaScript off, which loses both;
+ *   - a plain link, for anything that follows neither.
+ *
+ * `noindex` and the canonical link tell a search engine that the old address is not a page
+ * in its own right. No `data-pagefind-body`, so Pagefind does not index it either.
+ */
+interface Props {
+  /** Where to go, already base-prefixed by `path()`. */
+  to: string;
+}
+
+const { to } = Astro.props;
+const canonical = Astro.site ? new URL(to, Astro.site).href : to;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Moved | MathemAct</title>
+    <link rel="canonical" href={canonical} />
+    <meta http-equiv="refresh" content={`0; url=${to}`} />
+    <script is:inline define:vars={{ to }}>
+      location.replace(to + location.search + location.hash);
+    </script>
+  </head>
+  <body>
+    <p>This page has moved to <a href={to}>{canonical}</a>.</p>
+  </body>
+</html>

@@ -1,0 +1,22 @@
+---
+/**
+ * The one message a form has to give back: what happened, and what to do next.
+ *
+ * `role="status"` makes it a polite live region, so a message that appears after a
+ * submission is announced without interrupting whatever is being read. `tabindex="-1"`
+ * makes it focusable programmatically but leaves it out of the tab order — showStatus()
+ * moves focus here on an error, which is the part that actually works for a sighted
+ * keyboard user, who gets nothing at all from a live region.
+ *
+ * It ships hidden and empty rather than being created on demand. A live region has to
+ * exist before the text is put into it; one inserted into the document with its message
+ * already inside is frequently not announced.
+ */
+interface Props {
+  id: string;
+}
+
+const { id } = Astro.props;
+---
+
+<div class="form-status" id={id} role="status" tabindex="-1" hidden></div>

@@ -1,0 +1,137 @@
+---
+/**
+ * Subject areas, chosen from the seeded vocabulary.
+ *
+ * A filtered list of checkboxes rather than a combobox, and that is a deliberate choice
+ * about accessibility rather than an absence of ambition. A custom multi-select combobox
+ * needs `aria-activedescendant`, roving focus, and announcements that most implementations
+ * get subtly wrong; a fieldset of checkboxes with a text input that hides non-matching ones
+ * is keyboard accessible and screen-reader correct by construction, because it is made of
+ * things that already are.
+ *
+ * The search box filters, it does not submit. Typing narrows thirty-two options to three;
+ * tab moves into them; space selects. Nothing is hidden from assistive technology that is
+ * not also hidden visually.
+ *
+ * The options are fetched from the database rather than duplicated here. The vocabulary is
+ * seeded by a migration and curated — no browser role can write to it — so the table is the
+ * one source of truth, and a TypeScript copy would drift the first time a tag is retired.
+ */
+---
+
+<div class="tag-picker" data-tag-picker>
+  <div class="field">
+    <label class="field__label" for="tag-search">Search the categories</label>
+    <p class="field__hint" id="tag-search-hint">
+      The arXiv mathematics subject classes. Choose as many as apply, or none..
+    </p>
+    <input
+      class="field__control"
+      type="search"
+      id="tag-search"
+      data-tag-search
+      autocomplete="off"
+      placeholder="number theory, math.NT…"
+      aria-describedby="tag-search-hint"
+    />
+  </div>
+
+  <p class="tag-picker__status" data-tag-status role="status">Loading the categories…</p>
+
+  <fieldset class="tag-picker__options" data-tag-options hidden>
+    <legend class="visually-hidden">Subject areas</legend>
+  </fieldset>
+
+  <template data-tag-template>
+    <label class="tag">
+      <input class="tag__input" type="checkbox" />
+      <span class="tag__code"></span>
+      <span class="tag__label"></span>
+    </label>
+  </template>
+
+  {/* Announced when it changes, so somebody who has filtered and selected several knows
+      what they have without leaving the field. */}
+  <p class="tag-picker__chosen" data-tag-chosen role="status">No categories chosen.</p>
+</div>
+
+<style>
+  .tag-picker {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+  }
+
+  .tag-picker__options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3xs);
+    max-height: 18rem;
+    margin: 0;
+    padding: var(--space-2xs);
+    border: var(--border);
+    border-radius: var(--radius-sm);
+    overflow-y: auto;
+  }
+
+  .tag-picker__options[hidden] {
+    display: none;
+  }
+
+  .tag-picker__status,
+  .tag-picker__chosen {
+    color: var(--ink-muted);
+    font-size: var(--size-2);
+  }
+
+  .tag-picker__status[hidden] {
+    display: none;
+  }
+
+  .tag {
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--space-3xs);
+    padding: var(--space-3xs) var(--space-2xs);
+    border: var(--border);
+    border-radius: var(--radius-sm);
+    background-color: var(--surface);
+    font-size: var(--size-2);
+    cursor: pointer;
+  }
+
+  .tag[hidden] {
+    display: none;
+  }
+
+  .tag:hover {
+    border-color: var(--ink-muted);
+  }
+
+  /* Selection is a thicker ink border and a wash, never colour alone — and the checkbox
+     itself stays visible, so the state is legible without knowing the convention. */
+  .tag:has(.tag__input:checked) {
+    border-width: var(--border-width-thick);
+    border-color: var(--ink);
+    background-color: var(--accent-wash);
+    padding: calc(var(--space-3xs) - 1px) calc(var(--space-2xs) - 1px);
+  }
+
+  .tag:has(.tag__input:focus-visible) {
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-offset);
+  }
+
+  .tag__input {
+    margin: 0;
+    accent-color: var(--accent);
+  }
+
+  /* A category code is a machine-parseable identifier, so it is set in mono like every
+     other one on this site. */
+  .tag__code {
+    font-family: var(--font-mono);
+    font-size: var(--size-0);
+    color: var(--ink-muted);
+  }
+</style>

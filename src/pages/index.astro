@@ -1,0 +1,831 @@
+---
+import Base from '../layouts/Base.astro';
+import GroupAction from '../components/GroupAction.astro';
+import { path } from '../lib/paths';
+import { LEIDEN, LICENCE, SITE } from '../lib/site';
+---
+
+<Base
+  title={SITE.name}
+  description="Mathematics is something we do. MathemAct is a space to rethink how we do it."
+  bareTitle
+  landing
+>
+  <div class="home">
+    <!-- ── Hero ─────────────────────────────────────────────────────────────── -->
+
+    <section class="hero" aria-labelledby="hero-heading">
+      <div class="shell hero__inner">
+        <div class="hero__copy">
+          {/* One sentence, one thought, and the verb carries the weight — so "do" is the
+              only italic on the page and the only place the accent appears in the
+              headline. The second sentence is the claim, not part of the title, which is
+              why it sits below the rule rather than inside the h1. */}
+          <h1 id="hero-heading">
+            Mathematics is something we <em>do.</em>
+          </h1>
+
+          <p class="hero__claim">MathemAct is a space to rethink how we do it.</p>
+
+          <p class="hero__lead">
+            As AI changes the way mathematics is practiced, MathemAct brings mathematicians together to learn
+            from each other's experiences, question how mathematics is done, and imagine new ways of working together.
+          </p>
+
+          <p class="hero__lead">
+            The aim is to make the changes happening in mathematical practice
+            visible, comparable, and easier to learn from.
+          </p>
+
+          <div class="hero__actions">
+            <a class="button button--primary" href="#explore">
+              Explore MathemAct
+              <span class="button__arrow" aria-hidden="true">→</span>
+            </a>
+
+            <a class="button button--secondary" href="#why">
+              Why this exists
+              <span class="button__arrow" aria-hidden="true">→</span>
+            </a>
+          </div>
+        </div>
+
+        <div class="hero__art">
+          <GroupAction />
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Three parts ──────────────────────────────────────────────────────── -->
+
+    <section id="explore" class="explore" aria-labelledby="explore-heading">
+      <div class="shell explore__inner">
+        <header class="explore__intro">
+          <h2 id="explore-heading">What you'll find here</h2>
+
+          <p>
+            MathemAct has three connected parts. Together, they explore how mathematics is changing:
+            <b>how we practice it, how we question it, and how we build it together.</b>
+          </p>
+
+          <a class="quiet-link" href="#why">
+            Learn more <span class="quiet-link__arrow" aria-hidden="true">↓</span>
+          </a>
+        </header>
+
+        <article class="pillar">
+          <p class="pillar__number">01</p>
+
+          <h3>Educate</h3>
+          <p class="pillar__claim">Learn how to do mathematics differently with reports</p>
+
+          <p>
+            First-hand accounts of mathematicians using AI in research, learning, teaching, and writing.
+          </p>
+
+          <p>
+            What they tried, what worked or failed, and how they checked the results.
+          </p>
+
+          <a class="pillar__link" href={path('/reports/')}>
+            Explore reports <span aria-hidden="true">→</span>
+          </a>
+        </article>
+
+        <article class="pillar">
+          <p class="pillar__number">02</p>
+
+          <h3>Agitate</h3>
+          <p class="pillar__claim">Challenge how mathematics is currently done with opinions</p>
+
+          <p>
+            Short claims about AI and mathematics, open for everyone to respond to.
+          </p>
+
+          <p>
+            See where mathematicians agree, disagree, and where the interesting questions remain open.
+          </p>
+
+          <a class="pillar__link" href={path('/opinions/')}>
+            Explore opinions <span aria-hidden="true">→</span>
+          </a>
+        </article>
+
+        <article class="pillar">
+          <p class="pillar__number">03</p>
+
+          <h3>Organize</h3>
+          <p class="pillar__claim">Connect and build together</p>
+
+          <p>
+            Find people, projects, and institutions working on AI and mathematics, alongside the tools,
+            courses, communities, guides, and other entries that can help turn ideas into practice.
+          </p>
+
+          <a class="pillar__link" href={path('/network/')}>
+            Explore the network <span aria-hidden="true">→</span>
+          </a>
+        </article>
+      </div>
+    </section>
+
+    <!-- ── Why ──────────────────────────────────────────────────────────────── -->
+
+    <section id="why" class="why" aria-labelledby="why-heading">
+      <div class="shell why__inner">
+        <div class="why__graphic" aria-hidden="true">
+          <svg viewBox="0 0 160 160">
+            <circle cx="80" cy="80" r="56" />
+            <ellipse cx="80" cy="80" rx="27" ry="56" />
+            <ellipse cx="80" cy="80" rx="47" ry="56" />
+            <path d="M24 80h112M32 53h96M32 107h96" />
+          </svg>
+        </div>
+
+        <div class="why__copy">
+          <h2 id="why-heading">Why MathemAct?</h2>
+
+          <p>
+            Mathematical practice is changing faster than we are documenting it. Useful workflows, misleading outputs,
+            verification techniques, and failed experiments are often shared informally, then disappear. That makes it
+            difficult to learn from one another — and harder for the mathematical community to develop thoughtful norms
+            around AI.
+          </p>
+
+          <p>
+            <b>MathemAct turns these experiences into a shared, structured record:</b> something we can learn from, compare,
+            question, and build on.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Evidence ─────────────────────────────────────────────────────────── -->
+
+    <section class="evidence" aria-labelledby="evidence-heading">
+      <div class="shell">
+        <header class="section-heading">
+          <h2 id="evidence-heading">Built as evidence, not testimonials</h2>
+          <p>
+            MathemAct is designed to be a trustworthy record that the community
+            can learn from.
+          </p>
+        </header>
+
+        <div class="evidence-grid">
+          <article class="evidence-item">
+            <div class="evidence-item__icon">
+              <svg viewBox="0 0 32 32" aria-hidden="true">
+                <path d="M16 4 25 8v7c0 6.4-3.7 10.4-9 13-5.3-2.6-9-6.6-9-13V8z" />
+              </svg>
+            </div>
+
+            <h3>Failures belong in the record.</h3>
+            <p>
+              Approaches that did not work are just as valuable as successes.
+            </p>
+          </article>
+
+          <article class="evidence-item">
+            <div class="evidence-item__icon">
+              <svg viewBox="0 0 32 32" aria-hidden="true">
+                <circle cx="16" cy="16" r="11" />
+                <path d="M16 9v7h6" />
+              </svg>
+            </div>
+
+            <h3>AI results age.</h3>
+            <p>
+              What works today may not work tomorrow. Every Report records the model, version, and date.
+              Others can report how an approach holds up as tools change.
+            </p>
+          </article>
+
+          <article class="evidence-item">
+            <div class="evidence-item__icon">
+              <svg viewBox="0 0 32 32" aria-hidden="true">
+                <ellipse cx="16" cy="8" rx="9" ry="4" />
+                <path d="M7 8v8c0 2.2 4 4 9 4s9-1.8 9-4V8" />
+                <path d="M7 16v8c0 2.2 4 4 9 4s9-1.8 9-4v-8" />
+              </svg>
+            </div>
+
+            <h3>The data is open.</h3>
+            <p>
+              Published material is available as structured data for analysis and
+              reuse under {LICENCE.name}.
+            </p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Leiden ───────────────────────────────────────────────────────────── -->
+
+    <section class="principles" aria-labelledby="principles-heading">
+      <div class="shell principles__inner">
+        <div class="principles__graphic" aria-hidden="true">
+          <svg viewBox="0 0 96 96">
+            <path d="M17 31 48 17l31 14z" />
+            <path d="M23 37h50M20 72h56M16 79h64" />
+            <path d="M27 37v35M39 37v35M57 37v35M69 37v35" />
+          </svg>
+        </div>
+
+        <div>
+          <h2 id="principles-heading">From principles to report</h2>
+
+          <p>
+            In 2026, the {LEIDEN.name} called on researchers to disclose their use
+            of AI and computational tools in mathematical research.
+          </p>
+
+          <p>
+            But what should meaningful disclosure actually look like?
+          </p>
+
+          <p>
+            <b>MathemAct starts with the report.</b> By collecting concrete cases in a common format we can begin
+            to understand what useful disclosure looks like in practice.
+          </p>
+
+          <a class="quiet-link" href={LEIDEN.url}>
+            Learn more about the Leiden Declaration
+            <span class="quiet-link__arrow" aria-hidden="true">→</span>
+          </a>
+
+          <p class="principles__note">
+            MathemAct is an independent project and is not affiliated with the Leiden Declaration.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Closing CTA ───────────────────────────────────────────────────────── -->
+
+    <section class="join" aria-labelledby="join-heading">
+      <div class="shell join__inner">
+        <div class="join__copy">
+          <h2 id="join-heading">Write up one thing you have actually done</h2>
+          <p>
+            Posting is open. Create an account, then say what you were trying to do, what
+            the tool did, and how you checked the result — about ten minutes. An account of
+            something that did not work is worth as much as one that did, and the corpus is
+            only useful if both are in it.
+          </p>
+        </div>
+
+        <div class="join__actions">
+          <a class="button button--primary" href={path('/account/sign-up/')}>
+            Create an account
+            <span class="button__arrow" aria-hidden="true">→</span>
+          </a>
+
+          <a class="button button--secondary" href={path('/reports/new/')}>
+            Post a report
+            <span class="button__arrow" aria-hidden="true">→</span>
+          </a>
+        </div>
+      </div>
+    </section>
+  </div>
+</Base>
+
+<style>
+  /* The landing page runs the --home-* palette from tokens.css: warm paper, near-black
+     ink, one red. Nothing here introduces a colour of its own. */
+  .home {
+    background: var(--home-paper);
+    color: var(--home-ink);
+  }
+
+  /* ── Hero ─────────────────────────────────────────────────────────────────────── */
+
+  .hero {
+    border-block-end: 1px solid var(--home-rule);
+  }
+
+  .hero__inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1.03fr) minmax(0, 1.07fr);
+    align-items: center;
+    gap: clamp(var(--space-lg), 3.5vw, 3.5rem);
+    padding-block: var(--space-2xl);
+  }
+
+  /* text-wrap: wrap undoes the `balance` that base.css sets on every heading. Balancing
+     is right for a heading in a column of prose and wrong here: it evens the rag by
+     pulling "is" down, which splits the sentence into three short lines and throws away
+     the measure. This headline wants to fill its line and break once, after "is".
+     No max-width either — the grid column is the measure, so the break moves with the
+     layout rather than with a number that has to be re-guessed every time it changes. */
+  .hero h1 {
+    font-size: clamp(2.75rem, 4.6vw, 4.25rem);
+    font-weight: var(--weight-semibold);
+    line-height: 1.04;
+    letter-spacing: -0.025em;
+    text-wrap: wrap;
+  }
+
+  .hero h1 em {
+    color: var(--home-red);
+    font-weight: var(--weight-normal);
+    font-style: italic;
+  }
+
+  .hero__claim {
+    max-width: 46ch;
+    margin-block-start: var(--space-md);
+    color: var(--home-red);
+    font-family: var(--font-serif);
+    font-size: clamp(1.1rem, 1.5vw, 1.35rem);
+    line-height: 1.35;
+  }
+
+  /* Short, thick, and the accent — the one piece of pure ornament on the page, earning
+     its place by separating the claim above from the explanation below without adding a
+     heading nobody needs. A pseudo-element rather than an <hr>, because it is decoration:
+     a real separator is announced as one, and "horizontal rule" between two sentences is
+     noise to anyone listening to the page. */
+  .hero__claim::after {
+    content: '';
+    display: block;
+    width: 4rem;
+    margin-block-start: var(--space-md);
+    border-block-start: 3px solid var(--home-red);
+  }
+
+  .hero__lead {
+    max-width: 38rem;
+    margin-block-start: var(--space-md);
+    color: var(--home-ink-soft);
+    font-size: var(--size-3);
+    line-height: 1.55;
+  }
+
+  .hero__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+    margin-block-start: var(--space-lg);
+  }
+
+  .hero__art {
+    width: 100%;
+  }
+
+  /* ── Buttons ──────────────────────────────────────────────────────────────────── */
+
+  .button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-lg);
+    min-height: 3rem;
+    padding: 0.7rem 1.15rem;
+    border: 1px solid var(--home-red);
+    border-radius: var(--home-radius);
+    font-size: var(--size-2);
+    font-weight: var(--weight-semibold);
+    text-decoration: none;
+    transition: background-color var(--motion-fast) var(--motion-ease),
+      border-color var(--motion-fast) var(--motion-ease),
+      color var(--motion-fast) var(--motion-ease);
+  }
+
+  .button--primary {
+    background: var(--home-red);
+    color: var(--home-paper);
+  }
+
+  .button--primary:hover {
+    border-color: var(--home-red-strong);
+    background: var(--home-red-strong);
+    color: var(--home-paper);
+  }
+
+  .button--secondary {
+    background: transparent;
+    color: var(--home-red);
+  }
+
+  .button--secondary:hover {
+    background: var(--home-red);
+    color: var(--home-paper);
+  }
+
+  .button__arrow {
+    font-size: 1.05em;
+    line-height: 1;
+  }
+
+  /* ── The quiet link: accent, no underline until hover ─────────────────────────── */
+
+  .quiet-link {
+    display: inline-block;
+    color: var(--home-red);
+    font-size: var(--size-2);
+    font-weight: var(--weight-semibold);
+    text-decoration: none;
+  }
+
+  .quiet-link:hover {
+    color: var(--home-red-strong);
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+
+  .quiet-link__arrow {
+    margin-inline-start: var(--space-2xs);
+  }
+
+  /* ── The three parts ──────────────────────────────────────────────────────────── */
+
+  .explore {
+    padding-block: var(--space-2xl);
+  }
+
+  /* Four columns, three hairlines. The rules are borders on the pillars rather than a
+     background, so they stretch to the tallest column and stay put when one of the three
+     runs longer than the others. */
+  .explore__inner {
+    display: grid;
+    grid-template-columns: minmax(0, 0.82fr) repeat(3, minmax(0, 1fr));
+    column-gap: var(--space-lg);
+  }
+
+  .explore__intro {
+    padding-inline-end: var(--space-sm);
+  }
+
+  .explore h2,
+  .why h2,
+  .evidence h2,
+  .principles h2,
+  .join h2 {
+    color: var(--home-ink);
+    font-size: clamp(1.6rem, 2.4vw, 2.1rem);
+    letter-spacing: -0.015em;
+  }
+
+  .explore__intro p {
+    margin-block: var(--space-sm);
+    color: var(--home-ink-soft);
+    font-size: var(--size-2);
+    line-height: 1.55;
+  }
+
+  /* A column, so the "Explore" links sit on one line across all three regardless of how
+     much prose is above them. Organize runs a paragraph shorter than the other two and a
+     ragged row of calls to action reads as an unfinished layout. */
+  .pillar {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    padding-inline-start: var(--space-lg);
+    border-inline-start: 1px solid var(--home-rule);
+  }
+
+  /* Mono, because it is an index rather than a word — and short-ruled, so the eye reads
+     the number as a marker attached to the heading below it rather than as a quantity. */
+  .pillar__number {
+    display: inline-block;
+    padding-block-end: var(--space-3xs);
+    border-block-end: 2px solid var(--home-red);
+    color: var(--home-red);
+    font-family: var(--font-mono);
+    font-size: var(--size-3);
+    letter-spacing: var(--tracking-wide);
+  }
+
+  .pillar h3 {
+    margin-block-start: var(--space-sm);
+    color: var(--home-red);
+    font-size: clamp(1.6rem, 2.4vw, 2.1rem);
+    letter-spacing: 0.005em;
+    text-transform: uppercase;
+  }
+
+  .pillar__claim {
+    margin-block-start: var(--space-2xs);
+    color: var(--home-red);
+    font-size: var(--size-2);
+    font-weight: var(--weight-semibold);
+    line-height: 1.4;
+  }
+
+  .pillar > p:not(.pillar__number):not(.pillar__claim) {
+    margin-block-start: var(--space-sm);
+    color: var(--home-ink-soft);
+    font-size: var(--size-2);
+    line-height: 1.55;
+  }
+
+  .pillar__link {
+    margin-block-start: auto;
+    padding-block-start: var(--space-md);
+    color: var(--home-red);
+    font-size: var(--size-2);
+    font-weight: var(--weight-semibold);
+    text-decoration: none;
+  }
+
+  .pillar__link:hover {
+    color: var(--home-red-strong);
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+
+  .pillar__link span {
+    margin-inline-start: var(--space-2xs);
+  }
+
+  /* ── Why ──────────────────────────────────────────────────────────────────────── */
+
+  .why {
+    border-block: 1px solid var(--home-rule);
+    background: var(--home-panel);
+  }
+
+  .why__inner {
+    display: grid;
+    grid-template-columns: 9rem minmax(0, 1fr);
+    align-items: center;
+    gap: clamp(var(--space-xl), 6vw, var(--space-3xl));
+    padding-block: var(--space-2xl);
+  }
+
+  .why__graphic svg {
+    width: 8rem;
+    fill: none;
+    stroke: var(--home-red);
+    stroke-width: 1.3;
+  }
+
+  .why__copy {
+    max-width: 47rem;
+  }
+
+  .why__copy p {
+    margin-block-start: var(--space-sm);
+    color: var(--home-ink-soft);
+  }
+
+  /* ── Evidence ─────────────────────────────────────────────────────────────────── */
+
+  .evidence {
+    padding-block: var(--space-2xl);
+  }
+
+  .section-heading {
+    max-width: 48rem;
+    margin-inline: auto;
+    margin-block-end: var(--space-xl);
+    text-align: center;
+  }
+
+  .section-heading p {
+    margin-block-start: var(--space-xs);
+    color: var(--home-ink-soft);
+  }
+
+  .evidence-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    max-width: 64rem;
+    margin-inline: auto;
+  }
+
+  .evidence-item {
+    padding: var(--space-sm) var(--space-xl);
+    text-align: center;
+  }
+
+  .evidence-item + .evidence-item {
+    border-inline-start: 1px solid var(--home-rule);
+  }
+
+  .evidence-item__icon {
+    display: grid;
+    width: 3rem;
+    height: 3rem;
+    margin-inline: auto;
+    place-items: center;
+    color: var(--home-red);
+  }
+
+  .evidence-item__icon svg {
+    width: 1.75rem;
+    height: 1.75rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .evidence-item h3 {
+    margin-block-start: var(--space-xs);
+    color: var(--home-ink);
+    font-size: var(--size-4);
+  }
+
+  .evidence-item p {
+    margin-block-start: var(--space-xs);
+    color: var(--home-ink-soft);
+    font-size: var(--size-2);
+    line-height: 1.5;
+  }
+
+  /* ── Principles ───────────────────────────────────────────────────────────────── */
+
+  .principles {
+    border-block: 1px solid var(--home-rule);
+    background: var(--home-panel);
+  }
+
+  .principles__inner {
+    display: grid;
+    grid-template-columns: 7rem minmax(0, 1fr);
+    gap: clamp(var(--space-lg), 5vw, var(--space-3xl));
+    align-items: center;
+    padding-block: var(--space-xl);
+  }
+
+  .principles__graphic svg {
+    width: 5.5rem;
+    fill: none;
+    stroke: var(--home-red);
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.5;
+  }
+
+  .principles p {
+    max-width: 54rem;
+    margin-block-start: var(--space-xs);
+    color: var(--home-ink-soft);
+    font-size: var(--size-2);
+  }
+
+  .principles .quiet-link {
+    margin-block-start: var(--space-sm);
+  }
+
+  .principles__note {
+    font-size: var(--size-0) !important;
+  }
+
+  /* ── Final CTA ────────────────────────────────────────────────────────────────── */
+
+  .join__inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-lg) var(--space-2xl);
+    padding-block: var(--space-xl);
+  }
+
+  .join h2 {
+    font-size: clamp(1.4rem, 2vw, 1.75rem);
+  }
+
+  .join p {
+    max-width: 64ch;
+    margin-block-start: var(--space-2xs);
+    color: var(--home-ink-soft);
+    font-size: var(--size-2);
+    line-height: 1.55;
+  }
+
+  .join__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+  }
+
+  /* ── Responsive ───────────────────────────────────────────────────────────────── */
+
+  @media (max-width: 62rem) {
+    .explore__inner {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      row-gap: var(--space-xl);
+    }
+
+    .explore__intro {
+      grid-column: 1 / -1;
+      max-width: 40rem;
+      padding-inline-end: 0;
+    }
+  }
+
+  @media (max-width: 52rem) {
+    .hero__inner {
+      grid-template-columns: 1fr;
+      padding-block: var(--space-xl);
+    }
+
+    .hero h1 {
+      max-width: 14ch;
+    }
+
+    .hero__art {
+      max-width: 34rem;
+      margin-inline: auto;
+    }
+
+    .explore__inner {
+      grid-template-columns: 1fr;
+    }
+
+    /* One column means the hairline is above each pillar, not beside it. */
+    .pillar {
+      padding-inline-start: 0;
+      padding-block-start: var(--space-md);
+      border-inline-start: 0;
+      border-block-start: 1px solid var(--home-rule);
+    }
+
+    .why__inner,
+    .principles__inner {
+      grid-template-columns: 1fr;
+      gap: var(--space-lg);
+    }
+
+    .evidence-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .evidence-item {
+      max-width: 32rem;
+      margin-inline: auto;
+      padding-block: var(--space-lg);
+    }
+
+    .evidence-item + .evidence-item {
+      border-inline-start: 0;
+      border-block-start: 1px solid var(--home-rule);
+    }
+
+    .join__inner {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 34rem) {
+    .hero h1 {
+      font-size: clamp(2.4rem, 11vw, 3rem);
+    }
+
+    .hero__actions,
+    .join__actions {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .why__inner,
+    .principles__inner,
+    .explore,
+    .evidence {
+      padding-block: var(--space-xl);
+    }
+  }
+
+  /* ── Height breakpoints: the two calls to action stay above the fold ──────────── */
+
+  @media (max-height: 800px) and (min-width: 52rem) {
+    .hero__inner {
+      padding-block: var(--space-xl);
+    }
+
+    .hero h1 {
+      font-size: clamp(2.5rem, 4vw, 3.5rem);
+    }
+
+    .hero__lead + .hero__lead {
+      display: none;
+    }
+  }
+
+  @media (max-height: 620px) and (min-width: 52rem) {
+    .hero__inner {
+      padding-block: var(--space-md);
+    }
+
+    .hero h1 {
+      font-size: clamp(2rem, 3.2vw, 2.75rem);
+    }
+
+    .hero__lead {
+      display: none;
+    }
+
+    .hero__rule {
+      margin-block-start: var(--space-sm);
+    }
+
+    .hero__actions {
+      margin-block-start: var(--space-md);
+    }
+  }
+</style>

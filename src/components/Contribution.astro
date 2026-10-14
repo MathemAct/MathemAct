@@ -1,0 +1,395 @@
+---
+/**
+ * One contribution on a claim.
+ *
+ * Its own component, so that the position groups and the off-scale group render a contribution
+ * from one definition rather than two copies of the same twenty lines. **Its styles live here
+ * and not in the parent**, because Astro does not put a parent's scoped-style attribute on a
+ * child component's root element — `.contribution` styled in `Contributions.astro` would
+ * compile to a selector matching nothing.
+ *
+ * Name and date only. **No badge line**: verification status, institution and country are all
+ * absent, and that is a rendering rule for this surface alone. A contribution is read by the
+ * position it argues from, and an institution beside it invites the reader to weigh the
+ * affiliation instead of the reason. Nothing about what is stored or derived changes, and
+ * badges are untouched on report pages, entry pages, author pages and report comments.
+ *
+ * The name is not a link, which is how it renders today: author pages are generated for report
+ * authors, claim authors and entry submitters, and a contribution's author may be none of the
+ * three. Linking the ones who happen to qualify would produce a page for some names and a 404
+ * for the rest.
+ */
+import { ENDORSEMENT_ACTIONS, endorsementSentence } from '../lib/endorsements';
+import { longDate } from '../lib/format';
+import { movementLabel, positionLabel } from '../lib/positions';
+import type { Comment } from '../lib/comments';
+
+interface Props {
+  contribution: Comment;
+  /** Sanitised HTML with its formulas already set, from src/lib/markdown.ts. Empty when the
+   *  contribution has been deleted, which is when there is nothing to render. */
+  html: string;
+  /** The group this sits in — `0`–`10`, or `none`. Read by the flat view to move the node back. */
+  positionKey: string;
+  /**
+   * The later contribution that replaced this one, if its author has written another on this
+   * claim — and the earlier one this replaced, if it did.
+   *
+   * Both directions are passed in rather than looked up here, because resolving either means
+   * scanning every contribution on the claim and this component renders one. `Contributions
+   * .astro` builds both maps once.
+   */
+  supersededBy?: { id: string; score: number | null } | null;
+  supersedes?: { id: string; score: number | null } | null;
+}
+
+const {
+  contribution,
+  html,
+  positionKey,
+  supersededBy = null,
+  supersedes = null,
+}: Props = Astro.props;
+
+/**
+ * Whether the author may still edit, and if not, which rule closed it.
+ *
+ * **The interface agrees with the guard; it does not stand in for it.** Both conditions are
+ * enforced by `private.protect_comment_columns()`, which raises — this only decides what to
+ * show, and it reads `endorsedAt` rather than the endorsement counts because the stamp survives
+ * every endorsement being withdrawn and the counts do not.
+ */
+const HOURS = 24;
+const openedAt = Date.parse(contribution.createdAt);
+const closesAt = Number.isNaN(openedAt) ? null : openedAt + HOURS * 3_600_000;
+
+const editWindow = contribution.endorsedAt
+  ? { open: false, why: 'endorsed' as const }
+  : closesAt !== null && closesAt <= Date.now()
+    ? { open: false, why: 'expired' as const }
+    : { open: true, why: null };
+
+/** Both counts together, as the sort key. Written onto the element rather than recomputed,
+ *  because the "most endorsed" order is one number and this is where it is defined. */
+const endorsements =
+  contribution.endorsements.capturesMyView + contribution.endorsements.agreePositionNotReason;
+---
+
+<li
+  class="contribution"
+  id={`comment-${contribution.id}`}
+  data-contribution
+  data-position={positionKey}
+  data-comment-id={contribution.id}
+  data-comment-author={contribution.author?.id ?? ''}
+  data-comment-created={contribution.createdAt}
+  data-endorsements={endorsements}
+>
+  <div class="contribution__head">
+    <span class="contribution__who">
+      {contribution.deletedAt
+        ? 'Removed'
+        : (contribution.author?.displayName ?? 'A former member')}
+      {!contribution.deletedAt && contribution.author?.isPseudonym && (
+        <span class="contribution__pseudonym"> — a pseudonym</span>
+      )}
+    </span>
+
+    <span class="contribution__position">
+      {positionLabel(contribution.agreementScore, contribution.positionKnown)}
+    </span>
+
+    <a class="contribution__permalink meta" href={`#comment-${contribution.id}`}>
+      {longDate(contribution.createdAt)}
+    </a>
+  </div>
+
+  {/* ── A position change, recorded rather than tidied away ──────────────────────────
+      **This contribution stays exactly where it is** — original group, original text, original
+      score — and gains a link forward to what its author wrote after moving. Nothing is deleted
+      and nothing is moved: the record of somebody changing their mind is the most valuable thing
+      this section produces, and it means nothing without the earlier position visible where it
+      was. That is enforced in the database too, by a column with no write grant.
+
+      The badge is worded rather than arrowed. See `movementLabel()` — U+2192 is outside the
+      self-hosted font subsets, exactly as U+25A0 is. */}
+  {
+    supersededBy && (
+      <p class="contribution__moved">
+        <span class="contribution__moved-badge">
+          {movementLabel(contribution.agreementScore, supersededBy.score)}
+        </span>
+        <a href={`#comment-${supersededBy.id}`}>
+          Its author moved position and wrote again
+        </a>
+      </p>
+    )
+  }
+
+  {
+    supersedes && (
+      <p class="contribution__after meta">
+        Written after moving from{' '}
+        <a href={`#comment-${supersedes.id}`}>
+          {supersedes.score === null ? 'no opinion' : `position ${supersedes.score}`}
+        </a>.
+      </p>
+    )
+  }
+
+  {
+    contribution.deletedAt ? (
+      <p class="contribution__removed">
+        Removed by its author. The position it was written from stays in the distribution.
+      </p>
+    ) : (
+      <div class="contribution__body markdown" data-comment-body data-quotable set:html={html} />
+    )
+  }
+
+  {/* ── Endorsement, which is not a vote ─────────────────────────────────────────────
+      **No heart, no thumb, no arrow, no +1, no karma, and nothing coloured to read as a
+      score.** A vote count and a shared-reason count render identically as a number and do
+      opposite things: one ranks contributions against each other and rewards whoever phrased it
+      most sharply, the other measures how many people hold a reason. The label carries the whole
+      distinction, so it is spelled out in words every time — which is also why the counts below
+      are sentences rather than digits beside an icon.
+
+      Counts come from the export and are rendered here for everybody, signed in or not.
+      A browser cannot count these rows: `comment_endorsements_select_own` returns one person's
+      own, because endorsing requires a rating and ratings are private. **There is nothing here
+      that names an endorser, and nothing that could be extended to.**
+
+      The actions and the "answer first" pointer both ship hidden. Which one a reader sees is
+      decided in Contributions.astro once the session and their rating are known — and on their
+      own contribution the whole block is removed rather than disabled. */}
+  <div class="endorse" data-endorse>
+    <p class="endorse__counts meta" data-endorse-counts>
+      {ENDORSEMENT_ACTIONS.map((action) => {
+        const count =
+          action.kind === 'captures_my_view'
+            ? contribution.endorsements.capturesMyView
+            : contribution.endorsements.agreePositionNotReason;
+
+        return (
+          <span
+            class={`endorse__count${action.primary ? '' : ' endorse__count--aside'}`}
+            data-endorse-count={action.kind}
+            data-base={count}
+            hidden={count === 0}
+          >
+            {endorsementSentence(action.kind, count)}
+          </span>
+        );
+      })}
+    </p>
+
+    <div class="endorse__actions" data-endorse-actions hidden>
+      {ENDORSEMENT_ACTIONS.map((action) => (
+        <button
+          class={action.primary ? 'button button--quiet endorse__primary' : 'link-button'}
+          type="button"
+          data-endorse-kind={action.kind}
+          aria-pressed="false"
+        >
+          {action.label}
+        </button>
+      ))}
+    </div>
+
+    {/* Pointed at the scale, not at a sign-in wall — for an anonymous reader as much as for a
+        signed-in one who has not answered. The thing standing between them and this control is
+        not having a position, and the scale is where a position comes from; it says what signing
+        in is for by itself. */}
+    <p class="endorse__locked meta" data-endorse-locked hidden>
+      <button class="link-button" type="button" data-goto-scale>Answer the claim</button>
+      {' '}to say whether this captures your view.
+    </p>
+
+    <p class="form-status endorse__status" data-endorse-status role="status" tabindex="-1" hidden></p>
+  </div>
+
+  <div class="contribution__actions" data-comment-actions data-edit-open={String(editWindow.open)}>
+    <button class="link-button" type="button" data-action="edit" hidden>Edit</button>
+    <button class="link-button" type="button" data-action="delete" hidden>Delete</button>
+    <button class="link-button" type="button" data-action="flag" hidden>Flag</button>
+
+    {/* Shown to the author only, by the script, and it says which rule applies rather than
+        only that one does. The remaining time is filled in there too: rendered at build time it
+        would be hours stale before anybody read it. Deleting is unaffected either way — a
+        contribution is withdrawable at any age. */}
+    <span
+      class="contribution__window meta"
+      data-edit-window={editWindow.why ?? 'open'}
+      data-closes-at={closesAt === null ? '' : String(closesAt)}
+      hidden
+    >
+      {editWindow.why === 'endorsed'
+        ? 'Editing is closed: somebody has said this captures their view.'
+        : editWindow.why === 'expired'
+          ? 'Editing is closed: the 24 hours have passed.'
+          : ''}
+    </span>
+  </div>
+
+  <div class="contribution__slot" data-comment-slot></div>
+</li>
+
+<style>
+  .contribution {
+    padding-block-start: var(--space-sm);
+    border-block-start: var(--border);
+  }
+
+  .contribution__head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2xs) var(--space-sm);
+    flex-wrap: wrap;
+  }
+
+  .contribution__who {
+    font-weight: var(--weight-semibold);
+  }
+
+  .contribution__pseudonym {
+    font-weight: var(--weight-normal);
+    color: var(--ink-muted);
+  }
+
+  /* The position, stated rather than badged: no border, no fill, and **no colour by
+     agreement** — nothing in the opinions section may be coloured by where somebody stands, so
+     there is no ramp here and no tint that varies with the number. */
+  .contribution__position {
+    font-family: var(--font-mono);
+    font-size: var(--size-0);
+    color: var(--ink-muted);
+  }
+
+  .contribution__permalink {
+    margin-inline-start: auto;
+  }
+
+  .contribution__body {
+    margin-block-start: var(--space-2xs);
+  }
+
+  .contribution__removed {
+    margin-block-start: var(--space-2xs);
+    color: var(--ink-muted);
+    font-style: italic;
+  }
+
+  .endorse {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2xs);
+    margin-block-start: var(--space-xs);
+  }
+
+  .endorse__counts {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3xs);
+    margin: 0;
+  }
+
+  /* The secondary count is quieter than the primary one, and neither is a headline. No number
+     here is set larger than the prose around it. */
+  .endorse__count--aside {
+    font-size: var(--size-0);
+  }
+
+  .endorse__actions {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-sm);
+    flex-wrap: wrap;
+  }
+
+  /* The primary action is a quiet button and the secondary is a plain link-button. That is the
+     whole of the emphasis: no fill, no accent block, nothing that reads as the page urging a
+     click. */
+  .endorse__primary {
+    font-size: var(--size-1);
+    padding-block: var(--space-3xs);
+  }
+
+  /* Taken, rather than offered. Marked by `aria-pressed` first — this only follows it, so the
+     state is never carried by appearance alone. */
+  .endorse__actions [aria-pressed='true'] {
+    font-weight: var(--weight-semibold);
+    color: var(--ink);
+  }
+
+  .endorse__actions [aria-pressed='true']::before {
+    content: '✓ ';
+  }
+
+  .endorse__locked,
+  .endorse__status {
+    margin: 0;
+  }
+
+  .contribution__actions {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-sm);
+    flex-wrap: wrap;
+    margin-block-start: var(--space-2xs);
+  }
+
+  /* The movement, and the two halves of it. No colour and no direction implied: moving from 9
+     to 2 is the same kind of event as moving from 2 to 9, and this section takes no position on
+     which way is progress. */
+  .contribution__moved {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2xs);
+    flex-wrap: wrap;
+    margin-block: var(--space-2xs) 0;
+    font-size: var(--size-1);
+  }
+
+  .contribution__moved-badge {
+    padding: 0 var(--space-2xs);
+    border: var(--border);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: var(--size-0);
+    color: var(--ink-muted);
+  }
+
+  .contribution__after {
+    margin-block: var(--space-2xs) 0;
+  }
+
+  .contribution__window {
+    margin-inline-start: auto;
+  }
+
+  @media (max-width: 42rem) {
+    .contribution__window {
+      margin-inline-start: 0;
+    }
+  }
+
+  .contribution__slot:not(:empty) {
+    margin-block-start: var(--space-sm);
+  }
+
+  /* Text the browser could not set. Edits and new contributions are rendered in the browser
+     (src/lib/render-live.ts); this is only for when that fails — the renderer's chunk could not
+     be fetched — and the honest thing left to show is the source, marked as such. */
+  .contribution__body--unset {
+    white-space: pre-wrap;
+    font-family: var(--font-mono);
+    font-size: var(--size-1);
+  }
+
+  @media (max-width: 42rem) {
+    .contribution__permalink {
+      margin-inline-start: 0;
+    }
+  }
+</style>

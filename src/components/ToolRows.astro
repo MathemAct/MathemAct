@@ -1,0 +1,125 @@
+---
+/**
+ * Repeatable rows of tool, version, date of use, and what that tool did. At least one is
+ * required; six is the most.
+ *
+ * Name, version and date are all required, and the date is the reason this is structured at
+ * all: a report written against a 2025 model is misleading by 2026, and the tombstone on
+ * every listing is derived from the most recent date here. "GPT, sometime last year" is not
+ * a reproducible claim about anything.
+ *
+ * `role` is new and optional, and it is what turns two rows into an account. A model that
+ * drafted the sketch and a proof assistant that checked it is a different session from two
+ * models tried in turn, and until this field existed the difference lived only in the prose.
+ * It is part of the uniqueness key in the database, so the same tool can appear twice on one
+ * day in two roles — which is the account the column was added to make possible.
+ *
+ * The datalist suggests and never constrains. A closed list of tools would be out of date
+ * within a month, and the accounts worth having are frequently the ones using something
+ * nobody thought to list.
+ *
+ * Each row is a fieldset with a legend, numbered by the page's script and renumbered when one
+ * is removed. Three unlabelled text boxes repeated four times is the shape of form that a
+ * screen reader reads as twelve identical fields.
+ */
+import { COMMON_TOOLS, EARLIEST_TOOL_USE, REPORT_LIMITS } from '../lib/report-schema';
+
+const today = new Date().toISOString().slice(0, 10);
+---
+
+<div class="tools" data-tools>
+  <ul class="tools__list" data-tool-list role="list"></ul>
+
+  {/* The row that every other row is cloned from. `hidden` on a <template> is redundant
+      but harmless, and makes the intent obvious to anyone reading the DOM. */}
+  <template data-tool-template>
+    <li>
+      <fieldset class="tool-row">
+        <legend class="tool-row__legend" data-row-legend>Tool</legend>
+
+        <div class="tool-row__fields">
+          <div class="field">
+            <label class="field__label" data-label-for="name">Tool</label>
+            <input
+              class="field__control"
+              type="text"
+              data-tool-name
+              list="common-tools"
+              maxlength={REPORT_LIMITS.toolName}
+              placeholder="Lean"
+              autocomplete="off"
+            />
+          </div>
+
+          <div class="field">
+            <label class="field__label" data-label-for="version">Version</label>
+            <input
+              class="field__control"
+              type="text"
+              data-tool-version
+              maxlength={REPORT_LIMITS.toolVersion}
+              placeholder="4.9.0"
+              autocomplete="off"
+            />
+          </div>
+
+          <div class="field">
+            <label class="field__label" data-label-for="used-on">Date used</label>
+            <input
+              class="field__control"
+              type="date"
+              data-tool-date
+              min={EARLIEST_TOOL_USE}
+              max={today}
+            />
+          </div>
+
+          <button class="button button--quiet tool-row__remove" type="button" data-tool-remove>
+            Remove
+          </button>
+
+          <div class="field tool-row__wide">
+            <label class="field__label" data-label-for="role">
+              What this one did <span class="field__optional">optional</span>
+            </label>
+            <input
+              class="field__control"
+              type="text"
+              data-tool-role
+              maxlength={REPORT_LIMITS.toolRole}
+              placeholder="drafted the sketch"
+              autocomplete="off"
+            />
+          </div>
+        </div>
+
+        <p class="field__error" data-tool-error hidden></p>
+      </fieldset>
+    </li>
+  </template>
+
+  <datalist id="common-tools">
+    {COMMON_TOOLS.map((tool) => <option value={tool}></option>)}
+  </datalist>
+
+  <div class="actions">
+    <button class="button" type="button" data-tool-add>Add another tool</button>
+  </div>
+</div>
+
+<style>
+  .tools {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+  }
+
+  .tools__list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+</style>

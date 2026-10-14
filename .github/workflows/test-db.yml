@@ -1,0 +1,73 @@
+# Apply the migrations to a throwaway database and run the pgTAP suite against it.
+#
+# This is the gate in front of migrate.yml. The database is where every rule about who
+# can see and change what actually lives, so "the migration applied cleanly" is not the
+# same question as "the rules still hold", and only the second one matters.
+#
+# It runs here rather than on a developer machine because the primary one is a managed
+# Windows laptop where WSL is blocked by group policy, so there is no container runtime
+# and `supabase start` cannot run at all. CI is the only place the full local stack — the
+# auth schema, the anon and authenticated roles, real triggers on auth.users — can be
+# stood up. That turns out to be the better home for it anyway: this now gates every
+# future change rather than depending on someone remembering to run it.
+name: Database tests
+
+on:
+  push:
+    paths:
+      - 'supabase/**'
+      - '.github/workflows/test-db.yml'
+  pull_request:
+    paths:
+      - 'supabase/**'
+      - '.github/workflows/test-db.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pgtap:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Pinned, and it has to stay pinned. The CLI version chooses the image tags
+      # `supabase start` pulls, so `latest` silently re-points this suite at a new
+      # Postgres image whenever one ships. On 2026-10-10 that turned 45 assertions across
+      # 15 files red without a line of SQL changing: supabase/postgres moved
+      # 17.6.1.159 -> 17.11.0.004, and under the newer image anon and authenticated hold
+      # privileges these migrations never grant — INSERT and DELETE on profiles, UPDATE on
+      # role and is_banned, SELECT on ratings and flags and the activity feed. Every test
+      # expecting 42501 caught no exception at all.
+      #
+      # The grant baseline is the thing this suite exists to police, so a shift in it
+      # reads exactly like the regression it is meant to catch and cannot be told from one
+      # by looking. Moving this pin is therefore a deliberate act, not housekeeping: bump
+      # it on its own branch, diff role_table_grants for anon and authenticated against
+      # this version, and revoke whatever widened in a migration before merging.
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3.0.0
+        with:
+          version: 2.115.0
+
+      # The full stack, not just Postgres. The auth schema, auth.users, and the anon and
+      # authenticated roles are created by the auth service, and every test here depends
+      # on at least one of them. A bare postgres container would pass nothing.
+      - name: Start the local Supabase stack
+        run: supabase start -x realtime,storage-api,imgproxy,studio,edge-runtime,logflare,vector
+
+      # supabase start has already applied supabase/migrations in order. If any of them
+      # were invalid the step above would have failed, so reaching here proves the
+      # migrations apply to an empty database.
+      - name: Run pgTAP suite
+        run: supabase test db
+
+      - name: Show container logs on failure
+        if: failure()
+        run: supabase status || true

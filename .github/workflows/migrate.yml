@@ -1,0 +1,172 @@
+# Apply supabase/migrations/ to the production database.
+#
+# Migrations are append-only plain SQL applied by the Supabase CLI. The Supabase GitHub
+# integration is deliberately not used — see docs/decisions.md.
+#
+# Fork safety: `pull_request` is absent from `on:` by design, so a fork's pull request
+# cannot start this workflow, and forked repositories have no access to these secrets
+# regardless. The `if:` below re-states both facts so that widening the triggers later
+# cannot quietly hand a stranger's SQL a connection to the live database.
+name: Migrate
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/**'
+      - '.github/workflows/migrate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never run two migrations at once, and never cancel one part-way through: an
+# interrupted `db push` leaves the schema in a state no migration file describes.
+concurrency:
+  group: supabase-migrate
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    if: >-
+      github.repository == 'MathemAct/MathemAct'
+      && github.event_name != 'pull_request'
+      && github.event_name != 'pull_request_target'
+    runs-on: ubuntu-latest
+    env:
+      # Comparing a secret against '' evaluates to a plain boolean, so this exposes
+      # nothing while still letting the steps below decide whether there is anything to
+      # do. The secret values themselves are injected only into the step that uses them.
+      HAVE_CREDENTIALS: ${{ secrets.SUPABASE_DB_URL != '' && secrets.SUPABASE_ACCESS_TOKEN != '' }}
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Without this the job would go green while having done nothing, which is the one
+      # outcome a migration workflow must never produce silently.
+      - name: Warn if credentials are missing
+        if: env.HAVE_CREDENTIALS != 'true'
+        run: |
+          echo "::warning title=Migrations not applied::SUPABASE_DB_URL and/or SUPABASE_ACCESS_TOKEN are not set. Add them under Settings → Secrets and variables → Actions, then re-run this workflow."
+
+      # Pinned to the version test-db.yml gates against, so the CLI that proved the
+      # migrations on a throwaway database is the CLI that applies them to production.
+      # `latest` here meant the tool with write access to the real database could change
+      # between the gate passing and the push happening.
+      - name: Install Supabase CLI
+        if: env.HAVE_CREDENTIALS == 'true'
+        uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3.0.0
+        with:
+          version: 2.115.0
+
+      - name: Apply migrations
+        if: env.HAVE_CREDENTIALS == 'true'
+        env:
+          # --db-url is what actually applies the SQL; it connects directly and needs no
+          # linked project on disk, so the CLI's local state never has to be committed.
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          # Read by the CLI for anything that goes through the Management API rather than
+          # the database connection.
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase db push --db-url "$SUPABASE_DB_URL"
+
+      # The same lints the dashboard's Security Advisor page shows, read from the
+      # Management API so the answer lands in the run log instead of depending on somebody
+      # remembering to look. Checked here rather than anywhere else because a migration is
+      # the only thing that can introduce most of these: a table without RLS, a view that
+      # runs as its definer, a function with a mutable search path.
+      #
+      # ERROR-level findings fail the job. WARN and INFO are printed and allowed — several
+      # are project-level auth settings that no migration can fix.
+      - name: Security advisor
+        if: env.HAVE_CREDENTIALS == 'true'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          # Public by design; it appears in every request the browser makes.
+          PROJECT_REF: fgnmafmzracdytpfqpel
+        run: |
+          set -euo pipefail
+
+          lints=$(curl -sS --fail-with-body \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/${PROJECT_REF}/advisors/security")
+
+          errors=$(printf '%s' "$lints" | jq '[.lints[] | select(.level == "ERROR")] | length')
+          warns=$(printf '%s' "$lints" | jq '[.lints[] | select(.level == "WARN")] | length')
+          total=$(printf '%s' "$lints" | jq '.lints | length')
+
+          {
+            echo "### Security advisor"
+            echo
+            echo "\`$errors\` error, \`$warns\` warning, \`$total\` finding(s) in total."
+            echo
+            if [ "$total" -gt 0 ]; then
+              echo '| Level | Lint | Detail |'
+              echo '|---|---|---|'
+              printf '%s' "$lints" | jq -r \
+                '.lints[] | "| \(.level) | \(.name) | \(.detail // .title) |"' \
+                | sed -e 's/<[^>]*>//g'
+            else
+              echo 'Nothing flagged.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Full detail on stdout. A finding that names no object is not actionable, and
+          # chasing one costs a round trip through CI.
+          printf '%s' "$lints" | jq -r '
+            .lints[]
+            | "\(.level)  \(.name)\n    \(.detail // .title)\n    objects: \(.metadata // {} | tostring)\n"
+          ' | sed -e 's/<[^>]*>//g'
+          echo "errors=$errors warnings=$warns total=$total"
+
+          if [ "$errors" -gt 0 ]; then
+            echo "::error title=Security advisor::${errors} error-level finding(s). See the job summary."
+            exit 1
+          fi
+
+      # The advisor reports on the whole project, including objects Supabase creates
+      # itself, so a clean advisor run does not by itself prove our own functions are
+      # unreachable. This asserts the thing we actually control: nothing in the private
+      # schema is executable by a browser role. Postgres grants EXECUTE to PUBLIC on every
+      # new function by default, so this is one forgotten REVOKE away from being false.
+      - name: Assert private functions are unreachable
+        if: env.HAVE_CREDENTIALS == 'true'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PROJECT_REF: fgnmafmzracdytpfqpel
+        run: |
+          set -euo pipefail
+
+          query='select n.nspname as schema, p.proname as name,
+                        pg_get_function_result(p.oid) as returns,
+                        p.prosecdef as security_definer,
+                        coalesce(array_to_string(p.proacl, ISPACE), :default_acl) as acl
+                   from pg_proc p
+                   join pg_namespace n on n.oid = p.pronamespace
+                  where n.nspname in (SPRIVATE, SPUBLIC) and p.prokind = ISF
+                  order by 1, 2'
+          # Quoting through JSON, YAML and bash at once is not worth the risk of a subtle
+          # mistake in a security check, so the literals are substituted here.
+          query=${query//ISPACE/\'\, \'}
+          query=${query//:default_acl/\'(default: PUBLIC EXECUTE)\'}
+          query=${query//SPRIVATE/\'private\'}
+          query=${query//SPUBLIC/\'public\'}
+          query=${query//ISF/\'f\'}
+
+          body=$(jq -nc --arg q "$query" '{query: $q}')
+          rows=$(curl -sS --fail-with-body \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$body" \
+            "https://api.supabase.com/v1/projects/${PROJECT_REF}/database/query")
+
+          echo "$rows" | jq -r '.[] | "\(.schema).\(.name) -> \(.returns)  definer=\(.security_definer)\n    acl: \(.acl)\n"'
+
+          leaked=$(echo "$rows" | jq '[.[] | select(.schema == "private")
+                                          | select(.acl | test("(^|,)\\s*(anon|authenticated)="))] | length')
+          echo "private functions reachable by a browser role: $leaked"
+          if [ "$leaked" -gt 0 ]; then
+            echo "::error title=Private function exposed::A function in the private schema grants EXECUTE to anon or authenticated."
+            exit 1
+          fi

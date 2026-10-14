@@ -1,0 +1,292 @@
+---
+/**
+ * Everything one contributor has published.
+ *
+ * Deliberately thin. This is not a profile page with a follower count and an activity
+ * graph — it is the answer to "what else has this person written", which is the question a
+ * reader asks after an account they found useful. Anything more would turn a corpus into a
+ * network, and the corpus is the point.
+ *
+ * Reports, then claims, then entries: authored accounts, then claims they have put
+ * to the community, then things they have pointed at. Only reports get cards. A claim
+ * is one sentence and an entry is a link, so both are listed — on this page the question is
+ * what someone has contributed, not the full case for each item, which is what
+ * /opinions/ and /network/ are for. The lists are thin for the same reason the page is.
+ *
+ * A person can appear here with no reports at all: a claim author and an entry
+ * submitter are both contributors. `listContributors()` is the union, and it is the
+ * definition of which pages exist.
+ *
+ * The badge block says exactly what was verified and no more: an address at an
+ * institution's domain was confirmed to work, on a date. Not employment, not position, not
+ * seniority. A pseudonym is marked as one, at every tier, because a pseudonymous
+ * institutional badge is a normal and intended combination here.
+ */
+import Base from '../../layouts/Base.astro';
+import Badges from '../../components/Badges.astro';
+import ReportCard from '../../components/ReportCard.astro';
+import '../../styles/corpus.css';
+import '../../styles/forms.css';
+import { listContributors } from '../../lib/authors';
+import { longDate } from '../../lib/format';
+import { path } from '../../lib/paths';
+import { reportsByAuthor } from '../../lib/reports';
+import { areaLabel } from '../../lib/report-schema';
+import { claimsByAuthor } from '../../lib/claims';
+import { categoryLabel, entriesBySubmitter } from '../../lib/network';
+
+export async function getStaticPaths() {
+  const contributors = await listContributors();
+
+  return Promise.all(
+    contributors.map(async (author) => ({
+      params: { id: author.id },
+      props: {
+        author,
+        reports: await reportsByAuthor(author.id),
+        claims: await claimsByAuthor(author.id),
+        entries: entriesBySubmitter(author.id),
+      },
+    })),
+  );
+}
+
+const { author, reports, claims, entries } = Astro.props;
+
+---
+
+<Base
+  title={author.displayName}
+  description={`Reports and entries contributed to MathemAct by ${author.displayName}.`}
+>
+  <div class="shell corpus">
+    <p class="breadcrumb">
+      <a href={path('/reports/')}>← All reports</a>
+    </p>
+
+    <header class="corpus__header">
+      <h1>{author.displayName}</h1>
+
+      {
+        author.isPseudonym && (
+          <p class="corpus__lead">
+            This is a pseudonym.
+          </p>
+        )
+      }
+
+      <div class="author__badges">
+        <Badges institution={author.institution} />
+      </div>
+
+      {/* One line per kind of contribution, stacked, rather than one line with rules between
+          them. Three counts and the outcome breakdown do not fit on a line at this size, and
+          a wrapped flex item keeps the border that was standing in for a separator — so the
+          second line began with a rule attached to nothing. Somebody with only reports,
+          which is nearly everybody, sees exactly one line either way. */}
+      <ul class="author__summary" role="list">
+        <li>
+          <span class="meta">
+            {reports.length} published {reports.length === 1 ? 'report' : 'reports'}
+          </span>
+        </li>
+        {
+          claims.length > 0 && (
+            <li>
+              <span class="meta">
+                {claims.length}{' '}
+                {claims.length === 1 ? 'claim' : 'claims'}
+              </span>
+            </li>
+          )
+        }
+        {
+          entries.length > 0 && (
+            <li>
+              <span class="meta">
+                {entries.length} {entries.length === 1 ? 'entry' : 'entries'}{' '}
+                submitted
+              </span>
+            </li>
+          )
+        }
+      </ul>
+    </header>
+
+    {
+      reports.length === 0 && claims.length === 0 && entries.length === 0 && (
+        <div class="empty">
+          <p class="empty__heading">Nothing published yet.</p>
+          <p>
+            This account exists and has posted nothing that has cleared moderation. Pending
+            submissions are visible only to their author.
+          </p>
+        </div>
+      )
+    }
+
+    {
+      reports.length > 0 && (
+        <section>
+          <h2 class="author__section">Reports</h2>
+          {reports.map((report) => (
+            <ReportCard report={report} showAuthor={false} />
+          ))}
+        </section>
+      )
+    }
+
+    {
+      claims.length > 0 && (
+        <section>
+          <h2 class="author__section">Claims proposed</h2>
+
+          {/* The same list the opinions index uses, classes and all — those live in
+              corpus.css rather than in that page's scoped block, which is what makes one
+              claim look the same wherever it is read. */}
+          <ul class="claim-list" role="list">
+            {claims.map((claim) => (
+              <li class="claim-item">
+                <a
+                  class="claim-item__link"
+                  href={path(`/opinions/${claim.id}/`)}
+                >
+                  {claim.statement}
+                </a>
+                <p class="card__facts claim-item__facts">
+                  <span>{areaLabel(claim.area)}</span>
+                  <span class="meta">
+                    {claim.status === 'active'
+                      ? `Active since ${longDate(claim.activatedAt)}`
+                      : `Proposed ${longDate(claim.createdAt)}`}
+                  </span>
+                </p>
+              </li>
+            ))}
+          </ul>
+
+          <p class="author__more">
+            <a href={path('/opinions/')}>All opinions</a>
+          </p>
+        </section>
+      )
+    }
+
+    {
+      entries.length > 0 && (
+        <section>
+          <h2 class="author__section">Network submitted</h2>
+
+          <ul class="author__entries" role="list">
+            {entries.map((entry) => (
+              <li class="author__entry">
+                <p class="author__entry-title">
+                  <a href={entry.url} rel="noopener noreferrer" target="_blank">
+                    {entry.title}
+                  </a>
+                  {entry.linkStatus === 'unreachable' && (
+                    <span
+                      class="author__broken"
+                      title="This link was unreachable at the last monthly check"
+                    >
+                      Link may be broken
+                    </span>
+                  )}
+                </p>
+
+                <ul class="card__facts" role="list">
+                  <li>
+                    <span class="meta">{entry.urlNormalised}</span>
+                  </li>
+                  <li>{categoryLabel(entry.category)}</li>
+                </ul>
+              </li>
+            ))}
+          </ul>
+
+          <p class="author__more">
+            <a href={path('/network/')}>All entries</a>
+          </p>
+        </section>
+      )
+    }
+  </div>
+</Base>
+
+<style>
+  .breadcrumb {
+    margin-block-end: var(--space-md);
+    font-size: var(--size-2);
+  }
+
+  .author__badges {
+    margin-block-start: var(--space-md);
+  }
+
+  .author__summary {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3xs);
+    margin-block: var(--space-md) 0;
+    padding: 0;
+    list-style: none;
+    color: var(--ink-muted);
+    font-size: var(--size-2);
+  }
+
+  .meta {
+    font-family: var(--font-mono);
+    font-size: var(--size-1);
+    letter-spacing: var(--tracking-wide);
+  }
+
+  /* A section label rather than a title. There are two kinds of contribution on this page
+     now, so both are named — an unlabelled first list and a labelled second one would read
+     as though the reports were the page and the entries an afterthought. Set as the
+     labels elsewhere on this site are: mono, tracked out, quiet. */
+  .author__section {
+    margin-block: var(--space-xl) 0;
+    color: var(--ink-muted);
+    font-family: var(--font-mono);
+    font-size: var(--size-0);
+    font-weight: var(--weight-normal);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+  }
+
+  .author__entries {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .author__entry {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3xs);
+    padding-block: var(--space-sm);
+    border-block-start: var(--border);
+  }
+
+  .author__entry-title {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2xs);
+    align-items: baseline;
+    margin: 0;
+  }
+
+  /* Stated in words, not in colour. An entry whose link failed the monthly check is still
+     part of the corpus and still worth seeing — it is a fact about the link, not a verdict
+     on the contribution, so it gets no outcome colour and no tombstone. */
+  .author__broken {
+    font-size: var(--size-1);
+    font-style: italic;
+    color: var(--ink-muted);
+  }
+
+  .author__more {
+    margin-block-start: var(--space-md);
+    font-size: var(--size-2);
+  }
+</style>

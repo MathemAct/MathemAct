@@ -1,0 +1,11 @@
+---
+/**
+ * /debates/view/ moved to /opinions/view/ on 2026-10-12, when the section was renamed
+ * Opinions. A redirect stub, so that old links still reach the viewer for claims newer
+ * than the build. The query string, which carries the id, is kept by Redirect.astro.
+ */
+import Redirect from '../../components/Redirect.astro';
+import { path } from '../../lib/paths';
+---
+
+<Redirect to={path('/opinions/view/')} />

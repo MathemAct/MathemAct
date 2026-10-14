@@ -1,0 +1,82 @@
+---
+/**
+ * Renders a markdown-with-math string as sanitised HTML.
+ *
+ * Use this for anything a contributor wrote. Never use `set:html` directly on user
+ * content — the sanitising happens in src/lib/markdown.ts, and bypassing this component
+ * bypasses it.
+ *
+ * All of the work happens at build time, so no markdown parser and no copy of KaTeX
+ * reaches the browser.
+ */
+import { renderMarkdown } from '../lib/markdown';
+
+interface Props {
+  /** Markdown source. `$inline$` and `$$display$$` are rendered as TeX. */
+  content: string;
+  /** Element to render as. A report narrative is an article, a comment is a div. */
+  as?: 'div' | 'article' | 'section';
+  class?: string;
+}
+
+const { content, as: Tag = 'div', class: className }: Props = Astro.props;
+
+const html = await renderMarkdown(content);
+---
+
+<Tag class:list={['markdown', className]} set:html={html} />
+
+<style>
+  /* Vertical rhythm for generated markup. Child selectors only, because the content is
+     produced by the pipeline and has no classes of its own to hook. */
+  .markdown > * + * {
+    margin-block-start: var(--space-md);
+  }
+
+  .markdown :global(h2),
+  .markdown :global(h3) {
+    margin-block-start: var(--space-lg);
+  }
+
+  .markdown :global(ul),
+  .markdown :global(ol) {
+    padding-inline-start: var(--space-md);
+  }
+
+  .markdown :global(li + li) {
+    margin-block-start: var(--space-2xs);
+  }
+
+  .markdown :global(table) {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--size-2);
+  }
+
+  .markdown :global(th),
+  .markdown :global(td) {
+    padding: var(--space-2xs) var(--space-xs);
+    border-block-end: var(--border);
+    text-align: start;
+  }
+
+  /* Display formulas overflow horizontally rather than forcing the page to. A long
+     alignment on a 360px screen must not make the whole layout scrollable. */
+  .markdown :global(.katex-display) {
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-block: var(--space-3xs);
+  }
+
+  /* A formula KaTeX could not parse. Deliberately not one of the outcome colours —
+     those three mean "what the author reported happened" and appear nowhere else, and a
+     TeX syntax error is not an outcome. !important overrides the inline colour KaTeX
+     writes when throwOnError is false; the hover title carries the parser's message. */
+  .markdown :global(.katex-error) {
+    color: var(--ink) !important;
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    text-decoration: underline wavy var(--ink-muted);
+    text-underline-offset: 0.2em;
+  }
+</style>

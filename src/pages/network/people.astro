@@ -1,0 +1,596 @@
+---
+/**
+ * Find people — searchable listing of all contributors.
+ *
+ * Two features:
+ *
+ * 1. Client-side search: substring match on display name and institution, running
+ *    instantly against data-search attributes baked into the static HTML. No Supabase,
+ *    no round trip.
+ *
+ * 2. Suggestions: if localStorage says the visitor is signed in, the script lazy-imports
+ *    Supabase, reads the current user's published report tags, scores every contributor
+ *    by Jaccard overlap, and surfaces the top matches in a separate section. Fails
+ *    silently in every direction — not signed in, no published reports, database down.
+ *
+ * Tags are the signal for suggestions because they are the most structured thing the
+ * corpus carries about a mathematician's interests — MSC / arXiv categories chosen by the
+ * person who did the work. Tool names and areas are too coarse to be useful here.
+ */
+import Base from '../../layouts/Base.astro';
+import Badges from '../../components/Badges.astro';
+import '../../styles/corpus.css';
+import { path } from '../../lib/paths';
+import { listContributors } from '../../lib/authors';
+import { listReports } from '../../lib/reports';
+import { listClaims } from '../../lib/claims';
+import { listNetwork } from '../../lib/network';
+
+const contributors = await listContributors();
+const reports = await listReports();
+const claims = await listClaims();
+const network = listNetwork();
+
+// Unique tag codes per author, collected across all their published reports.
+const tagsByAuthor = new Map<string, string[]>();
+const reportCountByAuthor = new Map<string, number>();
+
+for (const r of reports) {
+  if (!r.author) continue;
+  const existing = tagsByAuthor.get(r.author.id);
+  if (existing) {
+    for (const t of r.tags) {
+      if (!existing.includes(t.code)) existing.push(t.code);
+    }
+  } else {
+    tagsByAuthor.set(r.author.id, r.tags.map((t) => t.code));
+  }
+  reportCountByAuthor.set(r.author.id, (reportCountByAuthor.get(r.author.id) ?? 0) + 1);
+}
+
+const claimCountByAuthor = new Map<string, number>();
+for (const d of claims) {
+  if (!d.author) continue;
+  claimCountByAuthor.set(d.author.id, (claimCountByAuthor.get(d.author.id) ?? 0) + 1);
+}
+
+const entryCountByAuthor = new Map<string, number>();
+for (const e of network) {
+  if (!e.submitter) continue;
+  entryCountByAuthor.set(e.submitter.id, (entryCountByAuthor.get(e.submitter.id) ?? 0) + 1);
+}
+
+// Most reports first, then alphabetical within that tier.
+const sorted = [...contributors].sort((a, b) => {
+  const ra = reportCountByAuthor.get(a.id) ?? 0;
+  const rb = reportCountByAuthor.get(b.id) ?? 0;
+  if (rb !== ra) return rb - ra;
+  return a.displayName.localeCompare(b.displayName, 'en');
+});
+---
+
+<Base
+  title="Find people"
+  description="Search contributors to MathemAct by name, or discover researchers who work on similar topics."
+>
+  <div class="shell corpus people-corpus">
+    <header class="corpus__header">
+      <h1>Find people</h1>
+      <p class="corpus__lead">
+        Search contributors by name or find researchers who work on similar topics.
+      </p>
+    </header>
+
+    <nav class="network-nav" aria-label="Network sections">
+      <a class="network-nav__link" href={path('/network/')}>Entries</a>
+      <a class="network-nav__link network-nav__link--active" href={path('/network/people/')} aria-current="page">Find people</a>
+    </nav>
+
+    {/* Visible by default. Hidden once auth is confirmed. */}
+    <div class="people-gate" data-auth-gate>
+      <p class="people-gate__text">Sign in to find and connect with other contributors.</p>
+      <p class="people-gate__actions">
+        <a class="button button--primary" href={path('/account/sign-in/')}>Sign in</a>
+      </p>
+    </div>
+
+    {/* Hidden until auth is confirmed. */}
+    <div data-people-content hidden>
+      {contributors.length === 0 ? (
+        <p class="corpus__empty">No contributors yet.</p>
+      ) : (
+        <>
+          <div class="people-search">
+            <input
+              type="search"
+              class="people-search__input"
+              placeholder="Search by name or institution…"
+              aria-label="Search contributors"
+              data-search-input
+              autocomplete="off"
+            />
+          </div>
+
+          {/* Suggestions — populated by the script once tags are fetched. */}
+          <section class="people-section people-section--suggested" data-suggested hidden>
+            <h2 class="people-section__heading">Suggested</h2>
+            <p class="people-section__note">
+              Contributors who work on similar topics to yours, based on report tags.
+            </p>
+            <ul class="people-list" data-suggested-list role="list"></ul>
+          </section>
+
+          <section class="people-section">
+            <p class="people-count" data-count aria-live="polite">
+              {sorted.length} {sorted.length === 1 ? 'contributor' : 'contributors'}
+            </p>
+
+            <ul class="people-list" data-people-list role="list">
+              {sorted.map((c) => {
+                const tags = tagsByAuthor.get(c.id) ?? [];
+                const rc = reportCountByAuthor.get(c.id) ?? 0;
+                const dc = claimCountByAuthor.get(c.id) ?? 0;
+                const ec = entryCountByAuthor.get(c.id) ?? 0;
+
+                const parts: string[] = [];
+                if (rc > 0) parts.push(`${rc} ${rc === 1 ? 'report' : 'reports'}`);
+                if (dc > 0) parts.push(`${dc} ${dc === 1 ? 'claim' : 'claims'}`);
+                if (ec > 0) parts.push(`${ec === 1 ? '1 entry' : `${ec} entries`}`);
+
+                // Institution as plain text for the suggestion builder, which cannot render
+                // the Badges component. Stored as a data attribute, never displayed directly.
+                const institutionText = c.institution
+                  ? `${c.institution.name}, ${c.institution.country}`
+                  : '';
+
+                return (
+                  <li
+                    class="person-card"
+                    data-id={c.id}
+                    data-search={[c.displayName, institutionText].join(' ').toLowerCase()}
+                    data-tags={tags.join(',')}
+                    data-display-name={c.displayName}
+                    data-is-pseudonym={c.isPseudonym ? 'true' : 'false'}
+                    data-institution={institutionText}
+                    data-counts={parts.join(' · ')}
+                  >
+                    <div class="person-card__head">
+                      <a class="person-card__name" href={path(`/authors/${c.id}/`)}>
+                        {c.displayName}
+                      </a>
+                      {c.isPseudonym && (
+                        <span class="person-card__pseudonym mono">pseudonym</span>
+                      )}
+                    </div>
+
+                    {c.institution && <Badges institution={c.institution} compact />}
+
+                    {tags.length > 0 && (
+                      <ul class="person-card__tags" role="list">
+                        {tags.slice(0, 5).map((code) => (
+                          <li class="tag-chip mono">{code}</li>
+                        ))}
+                        {tags.length > 5 && (
+                          <li class="tag-chip tag-chip--more mono">+{tags.length - 5}</li>
+                        )}
+                      </ul>
+                    )}
+
+                    {parts.length > 0 && (
+                      <p class="person-card__counts mono">{parts.join(' · ')}</p>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+
+            <p class="people-empty" data-no-results hidden>
+              No contributors match your search.
+            </p>
+          </section>
+        </>
+      )}
+    </div>
+
+    {/* Template for a suggestion card — simpler than the static cards, because
+        the Badges component cannot be instantiated at runtime. */}
+    <template data-suggestion-card>
+      <li class="person-card person-card--suggested">
+        <div class="person-card__head">
+          <a class="person-card__name" data-name></a>
+          <span class="person-card__pseudonym mono" data-pseudonym hidden>pseudonym</span>
+        </div>
+        <p class="person-card__institution mono" data-institution hidden></p>
+        <ul class="person-card__tags" role="list" data-shared-tags></ul>
+        <p class="person-card__counts mono" data-counts></p>
+      </li>
+    </template>
+  </div>
+</Base>
+
+<script>
+  /**
+   * Auth gate, then search and suggestions.
+   *
+   * The gate (sign-in prompt) is visible by default. This script verifies the session and
+   * either swaps to the contributor content or leaves the gate in place. Every path that
+   * does not confirm a signed-in user leaves the page unchanged.
+   */
+
+  const gateEl = document.querySelector<HTMLElement>('[data-auth-gate]')!;
+  const contentEl = document.querySelector<HTMLElement>('[data-people-content]')!;
+
+  void (async () => {
+    const { readSessionHint } = await import('../../lib/session-hint');
+
+    if (readSessionHint() !== 'in') {
+      // Session-hint is clear: not signed in. Gate stays.
+      return;
+    }
+
+    // Session hint says signed in — verify with Supabase before showing anything.
+    const { getSupabase } = await import('../../lib/supabase');
+    const supabase = getSupabase();
+    if (!supabase) return;
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      // Hint was stale (expired session). Gate stays.
+      return;
+    }
+
+    // Confirmed. Reveal the contributor content and hide the gate.
+    gateEl.hidden = true;
+    contentEl.hidden = false;
+
+    wireSearch();
+    void loadSuggestions(user.id);
+  })();
+
+  // ── Search ────────────────────────────────────────────────────────────────────────────
+  //
+  // Called only after auth is confirmed, so cards are guaranteed to be visible.
+
+  function wireSearch(): void {
+    const searchInput = document.querySelector<HTMLInputElement>('[data-search-input]');
+    const countEl = document.querySelector<HTMLElement>('[data-count]');
+    const noResults = document.querySelector<HTMLElement>('[data-no-results]');
+    const cards = document.querySelectorAll<HTMLElement>('[data-people-list] .person-card');
+
+    function applySearch(query: string): void {
+      const q = query.trim().toLowerCase();
+      let visible = 0;
+
+      for (const card of cards) {
+        const match = q === '' || (card.dataset.search ?? '').includes(q);
+        card.hidden = !match;
+        if (match) visible++;
+      }
+
+      if (countEl) {
+        countEl.textContent = `${visible} ${visible === 1 ? 'contributor' : 'contributors'}`;
+      }
+
+      if (noResults) noResults.hidden = visible > 0;
+    }
+
+    if (searchInput) {
+      searchInput.addEventListener('input', () => applySearch(searchInput.value));
+    }
+  }
+
+  // ── Suggestions ───────────────────────────────────────────────────────────────────────
+  //
+  // Fetches the current user's tag set and scores all contributor cards by Jaccard
+  // similarity. Every early return leaves the suggestions section hidden.
+
+  async function loadSuggestions(userId: string): Promise<void> {
+    const base = import.meta.env.PUBLIC_SUPABASE_URL as string | undefined;
+    const key = import.meta.env.PUBLIC_SUPABASE_ANON_KEY as string | undefined;
+    if (!base || !key) return;
+
+    let myTagCodes: string[] = [];
+    try {
+      const res = await fetch(
+        `${base}/rest/v1/reports?select=report_tags(tags(code))` +
+          `&author_id=eq.${encodeURIComponent(userId)}` +
+          '&status=eq.published&deleted_at=is.null',
+        { headers: { apikey: key, Authorization: `Bearer ${key}` } },
+      );
+      if (!res.ok) return;
+
+      const rows = (await res.json()) as Array<{
+        report_tags: Array<{ tags: { code: string } | null }>;
+      }>;
+
+      const seen = new Set<string>();
+      for (const row of rows) {
+        for (const link of row.report_tags ?? []) {
+          if (link.tags?.code) seen.add(link.tags.code);
+        }
+      }
+      myTagCodes = [...seen];
+    } catch {
+      return;
+    }
+
+    if (myTagCodes.length === 0) return;
+
+    const myTagSet = new Set(myTagCodes);
+    const cards = document.querySelectorAll<HTMLElement>('[data-people-list] .person-card');
+
+    type ScoredCard = { card: HTMLElement; score: number; sharedTags: string[] };
+    const scored: ScoredCard[] = [];
+
+    for (const card of cards) {
+      if (card.dataset.id === userId) continue;
+
+      const theirTags = (card.dataset.tags ?? '').split(',').filter(Boolean);
+      if (theirTags.length === 0) continue;
+
+      const shared = theirTags.filter((t) => myTagSet.has(t));
+      if (shared.length === 0) continue;
+
+      const unionSize = new Set([...myTagCodes, ...theirTags]).size;
+      const score = shared.length / unionSize;
+
+      scored.push({ card, score, sharedTags: shared });
+    }
+
+    if (scored.length === 0) return;
+
+    scored.sort((a, b) => b.score - a.score);
+    const top = scored.slice(0, 5);
+
+    const suggestedSection = document.querySelector<HTMLElement>('[data-suggested]');
+    const suggestedList = document.querySelector<HTMLElement>('[data-suggested-list]');
+    const cardTemplate = document.querySelector<HTMLTemplateElement>('[data-suggestion-card]');
+
+    if (!suggestedSection || !suggestedList || !cardTemplate) return;
+
+    for (const { card, sharedTags } of top) {
+      const node = (cardTemplate.content.cloneNode(true) as DocumentFragment)
+        .firstElementChild as HTMLElement;
+
+      const nameEl = node.querySelector<HTMLAnchorElement>('[data-name]')!;
+      nameEl.textContent = card.dataset.displayName ?? '';
+      const staticAnchor = card.querySelector<HTMLAnchorElement>('.person-card__name');
+      if (staticAnchor) nameEl.href = staticAnchor.href;
+
+      if (card.dataset.isPseudonym === 'true') {
+        node.querySelector<HTMLElement>('[data-pseudonym]')!.hidden = false;
+      }
+
+      const institution = card.dataset.institution ?? '';
+      if (institution) {
+        const instEl = node.querySelector<HTMLElement>('[data-institution]')!;
+        instEl.textContent = institution;
+        instEl.hidden = false;
+      }
+
+      const sharedTagsEl = node.querySelector<HTMLElement>('[data-shared-tags]')!;
+      for (const code of sharedTags.slice(0, 5)) {
+        const li = document.createElement('li');
+        li.className = 'tag-chip tag-chip--shared mono';
+        li.textContent = code;
+        sharedTagsEl.append(li);
+      }
+
+      const countsEl = node.querySelector<HTMLElement>('[data-counts]')!;
+      countsEl.textContent = card.dataset.counts ?? '';
+
+      suggestedList.append(node);
+    }
+
+    suggestedSection.hidden = false;
+  }
+</script>
+
+<style>
+  .people-corpus {
+    padding-block: var(--space-2xl);
+  }
+
+  .people-gate {
+    padding: var(--space-xl) 0;
+  }
+
+  .people-gate__text {
+    font-size: var(--size-3);
+    margin-block-end: var(--space-md);
+  }
+
+  .people-gate__actions {
+    margin: 0;
+  }
+
+  .network-nav {
+    display: flex;
+    gap: var(--space-sm);
+    margin-block-end: var(--space-lg);
+    border-block-end: var(--border);
+    padding-block-end: var(--space-sm);
+  }
+
+  .network-nav__link {
+    font-family: var(--font-mono);
+    font-size: var(--size-1);
+    letter-spacing: var(--tracking-wide);
+    color: var(--ink-muted);
+    text-decoration: none;
+    padding-block-end: var(--space-2xs);
+    border-block-end: 2px solid transparent;
+    margin-block-end: -1px;
+  }
+
+  .network-nav__link:hover {
+    color: var(--ink);
+  }
+
+  .network-nav__link--active {
+    color: var(--ink);
+    border-block-end-color: var(--accent);
+  }
+
+  /* ── Search ─────────────────────────────────────────────────────────────────────── */
+
+  .people-search {
+    margin-block-end: var(--space-xl);
+  }
+
+  .people-search__input {
+    width: 100%;
+    max-width: 28rem;
+    padding: var(--space-xs) var(--space-sm);
+    border: var(--border);
+    border-radius: var(--radius-sm);
+    background-color: var(--surface);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: var(--size-3);
+  }
+
+  .people-search__input:focus {
+    outline: 2px solid var(--ink);
+    outline-offset: 1px;
+    border-color: var(--ink);
+  }
+
+  /* ── Sections ───────────────────────────────────────────────────────────────────── */
+
+  .people-section {
+    margin-block-end: var(--space-2xl);
+  }
+
+  .people-section--suggested {
+    padding: var(--space-md);
+    border: var(--border);
+    border-radius: var(--radius-sm);
+    background-color: var(--tint);
+  }
+
+  .people-section__heading {
+    font-family: var(--font-mono);
+    font-size: var(--size-0);
+    font-weight: var(--weight-normal);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--ink-muted);
+    margin-block-end: var(--space-2xs);
+  }
+
+  .people-section__note {
+    font-size: var(--size-2);
+    color: var(--ink-muted);
+    margin-block-end: var(--space-md);
+  }
+
+  .people-count {
+    font-family: var(--font-mono);
+    font-size: var(--size-1);
+    letter-spacing: var(--tracking-wide);
+    color: var(--ink-muted);
+    margin-block-end: var(--space-md);
+  }
+
+  .people-empty {
+    font-size: var(--size-2);
+    color: var(--ink-muted);
+  }
+
+  /* ── Contributor list ───────────────────────────────────────────────────────────── */
+
+  .people-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+    gap: var(--space-md);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* ── Person card ────────────────────────────────────────────────────────────────── */
+
+  .person-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2xs);
+    padding: var(--space-md);
+    border: var(--border);
+    border-radius: var(--radius-sm);
+    background-color: var(--surface);
+  }
+
+  .person-card--suggested {
+    background-color: var(--ground);
+  }
+
+  .person-card__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-3xs) var(--space-xs);
+  }
+
+  .person-card__name {
+    font-family: var(--font-serif);
+    font-size: var(--size-4);
+    font-weight: var(--weight-semibold);
+    color: var(--accent-strong);
+  }
+
+  .person-card__pseudonym {
+    font-size: var(--size-1);
+    color: var(--ink-muted);
+    letter-spacing: var(--tracking-wide);
+  }
+
+  /* Institution text shown only in suggestion cards (the static cards use Badges). */
+  .person-card__institution {
+    font-size: var(--size-1);
+    color: var(--ink-muted);
+    letter-spacing: var(--tracking-wide);
+    margin: 0;
+  }
+
+  .person-card__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3xs);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .tag-chip {
+    padding: var(--space-3xs) var(--space-2xs);
+    border: var(--border);
+    border-radius: var(--radius-sm);
+    font-size: var(--size-0);
+    letter-spacing: var(--tracking-wide);
+    color: var(--ink-muted);
+    background-color: var(--ground);
+  }
+
+  .tag-chip--more {
+    color: var(--ink-muted);
+    border-style: dashed;
+  }
+
+  /* Shared tags in suggestion cards get a faint accent border. */
+  .tag-chip--shared {
+    border-color: var(--accent);
+    color: var(--ink);
+  }
+
+  .person-card__counts {
+    font-size: var(--size-1);
+    color: var(--ink-muted);
+    letter-spacing: var(--tracking-wide);
+    margin: 0;
+    margin-block-start: auto;
+  }
+</style>

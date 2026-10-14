@@ -1,0 +1,545 @@
+---
+/**
+ * The submission form. The most important flow in the product.
+ *
+ * One scrolling page with sixteen numbered sections and a progress indicator, not a wizard.
+ * Researchers want to see the whole shape of the ask before they start — a wizard hides how
+ * much is left, makes it impossible to answer section nine before section four, and turns
+ * "is this worth my time" into a question you can only answer by starting.
+ *
+ * Structure is the feature. Every field that constrains what an author can write is what
+ * makes the corpus comparable in five years instead of a pile of prose, so the caps are
+ * visible rather than discovered by rejection, and each field says in one line what it is
+ * for. This is closer to CONSORT or PRISMA than to a message board, and it is meant to be.
+ *
+ * The fields themselves are in `ReportFields.astro` and their behaviour is in
+ * `src/lib/report-form.ts`, both shared with /account/edit-submission/. What is left here is
+ * what only a first submission has: the gate, the draft, the near-duplicate check, and a
+ * button that says Publish.
+ *
+ * Ten to twelve minutes is the target for a researcher who has the session in front of them.
+ */
+import Account from '../../layouts/Account.astro';
+import FormStatus from '../../components/FormStatus.astro';
+import ReportFields from '../../components/ReportFields.astro';
+import { path } from '../../lib/paths';
+import { LICENCE, SITE } from '../../lib/site';
+import { SECTION_COUNT } from '../../lib/report-schema';
+---
+
+<Account
+  title="Post a report"
+  description="Record how you used an AI tool in mathematical work, in a form that can be read as evidence."
+  lead={`${SECTION_COUNT} sections. It takes ten to twelve minutes, and your draft is saved as you go.`}
+  gate="required"
+>
+  {/* Shown instead of the form when the account may not post. The same three conditions as
+      the insert policy on public.reports, checked here so nobody discovers them after
+      writing a submission. */}
+  <div class="panel" data-gate-unconfirmed hidden>
+    <p class="panel__heading">Confirm your email address first</p>
+    <p>
+      Posting needs a confirmed address. It is what the institutional badge is derived from,
+      and — since a report is published the moment it is written — it is the only thing
+      standing between the corpus and anyone with a script.
+    </p>
+    <p class="actions">
+      <a class="button button--primary" href={path('/account/confirm/')}>
+        Get another confirmation link
+      </a>
+    </p>
+  </div>
+
+  <div class="panel" data-gate-banned hidden>
+    <p class="panel__heading">This account cannot post</p>
+    <p>
+      If you think that is a mistake, write to <a href={`mailto:${SITE.contactEmail}`}
+        >{SITE.contactEmail}</a
+      > and it will be looked at by a person.
+    </p>
+  </div>
+
+  <div data-form-wrapper hidden>
+    <div class="progress">
+      <span class="progress__count" data-progress-count>0 of {SECTION_COUNT} sections</span>
+      <span class="progress__track">
+        <span class="progress__bar" data-progress-bar style="width: 0%"></span>
+      </span>
+      <span class="draft__state" data-draft-state></span>
+    </div>
+
+    <form class="report-form" id="report" novalidate>
+      <FormStatus id="report-status" />
+
+      <ReportFields>
+        {/* Near-duplicate warning. Filled by the duplicate-detection script on blur of
+            #title or #aim; hidden by default and never blocks submission. The link is a
+            discovery aid, not a gate — a report that reaches the same conclusion a
+            different way is still worth recording. */}
+        <div
+          class="panel duplicate-warning"
+          slot="after-title"
+          data-duplicate-warning
+          hidden
+          role="alert"
+          aria-live="polite"
+        >
+          <p>
+            <strong>Similar report found.</strong> Before submitting, check whether your
+            experience overlaps with:
+          </p>
+          <p>
+            <a
+              class="duplicate-warning__link"
+              data-duplicate-link
+              href=""
+              target="_blank"
+              rel="noopener noreferrer"></a>
+          </p>
+          <p class="field__hint">This is a suggestion only and does not block submission.</p>
+        </div>
+      </ReportFields>
+
+      <div class="draft">
+        <button class="button button--primary" type="submit">Publish</button>
+        <button class="button button--quiet" type="button" data-discard>Discard draft</button>
+        <span class="draft__state" data-draft-state></span>
+      </div>
+
+      <p class="field__hint">
+        This publishes straight away. If a reader thinks something
+        is wrong with it, they can flag it. A moderator will decide and you will be informed.<br>
+        Everything published here is licensed
+        <a href={LICENCE.url} rel="license">{LICENCE.name}</a>; you keep copyright and are
+        credited.
+      </p>
+    </form>
+  </div>
+</Account>
+
+<script>
+  import { submitReport } from '../../lib/reports';
+  import type { SubmissionReference, SubmissionTool } from '../../lib/reports';
+  import { ReportForm } from '../../lib/report-form';
+  import { loadProfile, mayPost } from '../../lib/profile';
+  import { startSession, subscribeToSession } from '../../lib/session';
+  import { debounce, discardDraft, loadDraft, saveDraft, savedAtLabel } from '../../lib/draft';
+  import { path } from '../../lib/paths';
+  import {
+    clearFieldErrors,
+    hideStatus,
+    query,
+    setBusy,
+    showStatus,
+  } from '../../lib/forms';
+  import { RATING_SCALES, SECTIONS } from '../../lib/report-schema';
+
+  const form = query<HTMLFormElement>('#report');
+  const wrapper = query<HTMLElement>('[data-form-wrapper]');
+  const status = query<HTMLElement>('#report-status');
+  const submit = query<HTMLButtonElement>('button[type="submit"]', form);
+  const discardButton = query<HTMLButtonElement>('[data-discard]');
+  const progressCount = query<HTMLElement>('[data-progress-count]');
+  const progressBar = query<HTMLElement>('[data-progress-bar]');
+  const draftStates = document.querySelectorAll<HTMLElement>('[data-draft-state]');
+
+  const fields = new ReportForm(form, refresh);
+
+  let userId: string | null = null;
+
+  // ── Who may see the form ────────────────────────────────────────────────────────────
+
+  subscribeToSession((state) => {
+    if (state.status !== 'signed-in') return;
+    if (userId === state.userId) return;
+
+    userId = state.userId;
+    void openForm(state.userId);
+  });
+
+  void startSession();
+
+  async function openForm(id: string): Promise<void> {
+    const result = await loadProfile(id);
+
+    if (!result.ok) {
+      showStatus(status, 'error', result.message);
+      wrapper.hidden = false;
+      return;
+    }
+
+    const profile = result.value;
+
+    if (profile.isBanned) {
+      query<HTMLElement>('[data-gate-banned]').hidden = false;
+      return;
+    }
+
+    if (!mayPost(profile)) {
+      query<HTMLElement>('[data-gate-unconfirmed]').hidden = false;
+      return;
+    }
+
+    wrapper.hidden = false;
+    restoreDraft(id);
+    void fields.fillTags();
+    refresh();
+  }
+
+  // ── Counters, conditionals and progress ─────────────────────────────────────────────
+
+  function refresh(): void {
+    fields.sync();
+
+    const done = fields.markSections();
+    progressCount.textContent = `${done} of ${SECTIONS.length} sections`;
+    progressBar.style.width = `${Math.round((done / SECTIONS.length) * 100)}%`;
+  }
+
+  // ── Draft ───────────────────────────────────────────────────────────────────────────
+
+  interface Draft {
+    fields: Record<string, string>;
+    checks: Record<string, boolean>;
+    multi: Record<string, string[]>;
+    tools: SubmissionTool[];
+    references: SubmissionReference[];
+    tags: string[];
+  }
+
+  /** Everything with an id and a `.value`. `career_stage` is a select and belongs here for
+   *  exactly that reason — it reads and writes the same way a text field does. */
+  const TEXT_FIELDS = [
+    'title', 'area_other', 'career_stage', 'aim', 'method', 'outcome_notes', 'verification',
+    'prompts', 'transcript_excerpt', 'transcript_url', 'caveats', 'time_spent_minutes',
+    'learned_notes',
+  ];
+
+  /** Radio groups, including all six scales. Built from RATING_SCALES rather than listed, so
+   *  a scale added to the schema is saved in a draft without anybody remembering to. */
+  const RADIO_GROUPS = [
+    'area', 'task_type', 'outcome', 'was_published', 'was_disclosed', 'author_confidence',
+    'generalises', 'time_saved', 'learned_something',
+    ...RATING_SCALES.map((scale) => scale.key),
+  ];
+
+  function collectDraft(): Draft {
+    const values: Record<string, string> = {};
+    for (const name of TEXT_FIELDS) values[name] = fields.value(name);
+    for (const name of RADIO_GROUPS) values[name] = fields.checked(name) ?? '';
+
+    return {
+      fields: values,
+      checks: {
+        third_party_confirmed: box('third_party_confirmed'),
+      },
+      multi: { task_secondary: fields.taskSecondary() },
+      tools: fields.readTools(),
+      references: fields.readReferences(),
+      tags: fields.chosenTags(),
+    };
+  }
+
+  function box(id: string): boolean {
+    return form.querySelector<HTMLInputElement>(`#${CSS.escape(id)}`)?.checked ?? false;
+  }
+
+  function restoreDraft(id: string): void {
+    const envelope = loadDraft<Draft>(id);
+
+    if (!envelope) {
+      fields.addTool();
+      return;
+    }
+
+    const draft = envelope.value;
+
+    for (const [name, text] of Object.entries(draft.fields ?? {})) {
+      if (TEXT_FIELDS.includes(name)) {
+        const field = form.querySelector<HTMLInputElement | HTMLSelectElement>(
+          `#${CSS.escape(name)}`,
+        );
+        if (field) field.value = text;
+      } else if (text) {
+        const radio = form.querySelector<HTMLInputElement>(
+          `input[name="${name}"][value="${CSS.escape(text)}"]`,
+        );
+        if (radio) radio.checked = true;
+      }
+    }
+
+    for (const [name, on] of Object.entries(draft.checks ?? {})) {
+      const check = form.querySelector<HTMLInputElement>(`#${CSS.escape(name)}`);
+      if (check) check.checked = on;
+    }
+
+    for (const value of draft.multi?.task_secondary ?? []) {
+      const check = form.querySelector<HTMLInputElement>(
+        `input[name="task_secondary"][value="${CSS.escape(value)}"]`,
+      );
+      if (check) check.checked = true;
+    }
+
+    const tools = draft.tools?.length ? draft.tools : [undefined];
+    for (const tool of tools) fields.addTool(tool);
+
+    for (const reference of draft.references ?? []) fields.addReference(reference);
+
+    // The tag list has not been fetched yet, so the chosen ones are held until it has.
+    fields.wantTags(draft.tags ?? []);
+
+    showStatus(status, 'notice', [
+      `A draft from ${new Date(envelope.savedAt).toLocaleString('en-GB')} has been restored.`,
+      'Carry on where you left off, or discard it at the bottom of the form.',
+    ]);
+  }
+
+  const persist = debounce(() => {
+    if (!userId) return;
+
+    const savedAt = saveDraft(userId, collectDraft());
+    for (const element of draftStates) {
+      element.textContent = savedAt
+        ? `Draft saved ${savedAtLabel(savedAt)}`
+        : 'Draft not saved — this browser is blocking storage';
+    }
+  }, 800);
+
+  form.addEventListener('input', () => {
+    refresh();
+    persist();
+  });
+
+  form.addEventListener('change', () => {
+    refresh();
+    persist();
+  });
+
+  discardButton.addEventListener('click', () => {
+    if (!userId) return;
+    if (!window.confirm('Discard this draft? Everything you have written here will be gone.')) {
+      return;
+    }
+
+    discardDraft(userId);
+    form.reset();
+    fields.resetRepeaters();
+    fields.clearTags();
+
+    for (const element of draftStates) element.textContent = 'Draft discarded';
+    hideStatus(status);
+    refresh();
+  });
+
+  // ── Submission ──────────────────────────────────────────────────────────────────────
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    clearFieldErrors(form);
+    hideStatus(status);
+
+    if (!userId) {
+      showStatus(status, 'error', 'Your session has ended. Sign in again — your draft is saved in this browser.');
+      return;
+    }
+
+    const firstBad = fields.validate();
+    const toolProblem = fields.toolCountMessage();
+
+    if (toolProblem) {
+      showStatus(status, 'error', toolProblem);
+      document.querySelector('#section-tools')?.scrollIntoView({ block: 'start' });
+      return;
+    }
+
+    if (firstBad) {
+      const target =
+        document.querySelector<HTMLElement>(`#${CSS.escape(firstBad)}`) ??
+        document.querySelector<HTMLElement>('#section-tools');
+
+      showStatus(status, 'error', 'Some sections still need an answer. They are marked below.');
+      target?.scrollIntoView({ block: 'center' });
+      if (!firstBad.startsWith('section-')) {
+        form.querySelector<HTMLElement>(`#${CSS.escape(firstBad)}`)?.focus();
+      }
+      return;
+    }
+
+    setBusy(submit, true, 'Submitting…');
+    const result = await submitReport(fields.read());
+    setBusy(submit, false);
+
+    if (!result.ok) {
+      showStatus(status, 'error', result.message);
+      return;
+    }
+
+    // Only now. A draft discarded before the write was confirmed would be a draft lost to
+    // a failed request.
+    discardDraft(userId);
+    // With the id, so the next page can link to the report itself.
+    window.location.assign(
+      `${path('/reports/submitted/')}?id=${encodeURIComponent(result.value)}`,
+    );
+  });
+</script>
+
+<script>
+  /**
+   * Near-duplicate detection.
+   *
+   * On blur of #title: pre-warm — start fetching data/embeddings.json and loading
+   * the sentence embedding model, so that by the time the user reaches #aim the model
+   * is (probably) ready.
+   *
+   * On blur of #aim: embed title + aim with Xenova/all-MiniLM-L6-v2 (the browser-side
+   * ONNX conversion of sentence-transformers/all-MiniLM-L6-v2) and compare against the
+   * stored corpus embeddings. If the closest match exceeds 0.85 cosine similarity, show
+   * a non-blocking link to that report.
+   *
+   * The model is loaded from jsDelivr and the weights download from HuggingFace on first
+   * use; both are cached by the browser afterwards. Every failure path is silent — the
+   * warning either appears or it does not; it never blocks or errors the form.
+   *
+   * The words in the warning are always the author's own (the linked report's title).
+   * Nothing is generated.
+   */
+
+  const titleInput = document.querySelector<HTMLInputElement>('#title');
+  const aimInput = document.querySelector<HTMLTextAreaElement>('#aim');
+  const warning = document.querySelector<HTMLElement>('[data-duplicate-warning]');
+  const link = warning?.querySelector<HTMLAnchorElement>('[data-duplicate-link]');
+
+  if (titleInput && aimInput && warning && link) {
+    // Capture non-nullable references for use inside async closures, where TypeScript's
+    // control-flow narrowing does not follow across function boundaries.
+    const titleEl = titleInput;
+    const aimEl = aimInput;
+    const warningEl = warning;
+    const linkEl = link;
+
+    const BASE = import.meta.env.BASE_URL as string;
+    const THRESHOLD = 0.85;
+    const TRANSFORMERS_CDN =
+      'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js';
+
+    type StoredEntry = { id: string; title: string; v: string };
+
+    let storedEntries: StoredEntry[] | null = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let pipelineRef: any = null;
+    let loadingPipeline = false;
+
+    async function prewarm(): Promise<void> {
+      // Fetch embeddings and load model in parallel; both are cached after first run.
+      void fetchEmbeddings();
+      void loadPipeline();
+    }
+
+    async function fetchEmbeddings(): Promise<void> {
+      if (storedEntries !== null) return;
+      try {
+        const res = await fetch(`${BASE}data/embeddings.json`, {
+          signal: AbortSignal.timeout(5000),
+        });
+        if (!res.ok) { storedEntries = []; return; }
+        const json = await res.json();
+        storedEntries = json.reports ?? [];
+      } catch {
+        storedEntries = [];
+      }
+    }
+
+    async function loadPipeline(): Promise<void> {
+      if (pipelineRef || loadingPipeline) return;
+      loadingPipeline = true;
+      try {
+        // @vite-ignore: CDN URL resolved at runtime; not bundled.
+        const mod = await import(/* @vite-ignore */ TRANSFORMERS_CDN);
+        // env: disable local model resolution; weights always from HuggingFace.
+        mod.env.allowLocalModels = false;
+        pipelineRef = await mod.pipeline(
+          'feature-extraction',
+          'Xenova/all-MiniLM-L6-v2',
+          { quantized: true },
+        );
+      } catch {
+        /* Degrade silently */
+      }
+      loadingPipeline = false;
+    }
+
+    function dequantize(b64: string): Float32Array {
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      const f = new Float32Array(bytes.length);
+      for (let i = 0; i < bytes.length; i++) f[i] = bytes[i] / 255 * 2 - 1;
+      return f;
+    }
+
+    function dot(a: Float32Array, b: Float32Array): number {
+      let s = 0;
+      for (let i = 0; i < a.length; i++) s += a[i] * b[i];
+      return s;
+    }
+
+    function norm(v: Float32Array): number { return Math.sqrt(dot(v, v)); }
+
+    function cosine(a: Float32Array, b: Float32Array): number {
+      const na = norm(a), nb = norm(b);
+      return na === 0 || nb === 0 ? 0 : dot(a, b) / (na * nb);
+    }
+
+    async function check(): Promise<void> {
+      const title = titleEl.value.trim();
+      const aim = aimEl.value.trim();
+      const text = title ? `${title} ${aim}` : aim;
+
+      if (text.length < 20) { warningEl.hidden = true; return; }
+
+      await fetchEmbeddings();
+      if (!storedEntries || storedEntries.length === 0) return;
+
+      await loadPipeline();
+      if (!pipelineRef) return;
+
+      try {
+        const output = await pipelineRef(text, { pooling: 'mean', normalize: true });
+        const vec = output.data as Float32Array;
+
+        let bestId = '';
+        let bestTitle = '';
+        let bestSim = 0;
+
+        for (const e of storedEntries) {
+          const sim = cosine(vec, dequantize(e.v));
+          if (sim > bestSim) { bestSim = sim; bestId = e.id; bestTitle = e.title; }
+        }
+
+        if (bestSim > THRESHOLD) {
+          linkEl.href = `${BASE}reports/${bestId}/`;
+          linkEl.textContent = bestTitle;
+          warningEl.hidden = false;
+        } else {
+          warningEl.hidden = true;
+        }
+      } catch { /* Degrade silently */ }
+    }
+
+    titleEl.addEventListener('blur', () => { void prewarm(); });
+    aimEl.addEventListener('blur', () => { void check(); });
+
+    // Clear the warning while the user edits; re-check on next blur.
+    titleEl.addEventListener('input', () => { warningEl.hidden = true; });
+    aimEl.addEventListener('input', () => { warningEl.hidden = true; });
+  }
+</script>
+
+<style>
+  .duplicate-warning {
+    border-color: var(--accent);
+  }
+
+  .duplicate-warning__link {
+    font-weight: var(--weight-semibold);
+  }
+</style>

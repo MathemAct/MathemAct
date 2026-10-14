@@ -1,0 +1,187 @@
+---
+import Page from '../layouts/Page.astro';
+import { path } from '../lib/paths';
+import { listClaimStats } from '../lib/claims';
+import { LEIDEN, LICENCE, SITE } from '../lib/site';
+
+/** Read from the export rather than typed into the sentence, so the copy cannot come to
+ *  disagree with `SORTABLE_MINIMUM` in scripts/export.mjs. Ten when the export has told us
+ *  nothing yet. */
+const claimSortMinimum = [...listClaimStats().values()][0]?.sortableMinimum ?? 10;
+---
+
+<Page
+  title="About"
+  description="What MathemAct is for, why accounts follow a fixed schema, and how verification works."
+  lead="MathemAct is a place for mathematicians to document, examine, and shape how AI is becoming part of mathematical practice."
+>
+  <h2>Why MathemAct</h2>
+
+  <p>
+    AI tools are already being used in mathematical research, learning, teaching, and writing. But most of what
+    we learn from using them disappears: what worked, what failed, what required careful checking, and what changed
+    the way we approached a problem.
+  </p>
+
+  <p>
+    MathemAct exists to make that experience visible.
+  </p>
+
+  <p>
+    The goal is not to decide whether AI is good or bad for mathematics. It is to build a public record
+    of how these tools are actually being used, so that mathematicians can learn from one another and make
+    informed decisions about how mathematical practice should evolve.
+  </p>
+
+  <h2>A record of practice</h2>
+
+  <p>
+    MathemAct is built around first-hand accounts rather than general impressions.
+  </p>
+
+  <p>
+    Contributions follow a common structure: what you were trying to do, which tool you used, what happened,
+    and how you checked that the result was correct.
+  </p>
+
+  <p>
+    Failures belong here as much as successes. So do partial successes, unexpected uses, and approaches
+    that stopped working when models changed.
+  </p>
+
+  <p>
+    The structure is deliberate. It makes individual experiences easier to compare, search, revisit, and
+    eventually study as a collective record.
+  </p>
+
+  <h2>A space to learn, question, and build</h2>
+
+  <p>
+    MathemAct has three parts:
+    <ul>
+      <li><b>Educate</b> collects concrete reports and experiences from which we can all learn.</li>
+      <li><b>Agitate</b> is a place to question existing habits and propose alternative ones.</li>
+      <li><b>Organize</b> gathers the tools, entries, projects, and people needed to turn those ideas into practice.</li>
+    </ul>
+  </p>
+
+  <p>
+    The three names are a reference to a quote by Antonio Gramsci. The point here is that the changes
+    brought by AI should not merely happen to mathematical practice; mathematicians should be equipped to shape
+    them collectively.
+  </p>
+
+  <h2>A respectful community</h2>
+
+    <p>
+    We encourage users to adhere to the website's <a href={path('/code-of-conduct/')}>code of conduct</a>.
+    In it, we have attempted to establish ground rules for what constitutes acceptable vs. unacceptable behavior.
+    The document also details what happens to users who violate its principles.
+    </p>
+
+    <p>
+    MathemAct can count on a couple of volunteer moderators. They are not gatekeepers for content:
+    anything users post is published right away, withouth needing a review. However, moderation exists
+    as a tool to make sure that the content of the website remains appopriate and respectful: 
+    users have the possibility to flag content if they deem it inappropriate, a moderator then
+    decides whether it stays up and writes an explanation that both the author and the flagger read.
+    For serious and repeated violations, accounts can be suspended. Suspended users can still access the
+    site, but in read-only mode, they can't post anything. The content they have already posted stays
+    up, but each contribution can be flagged and reviewed as any other post and comment can. Suspended
+    users can appeal the decision and a second moderator will review it.
+    </p>
+
+    <p>
+    Full details on how moderation, flagging and supensions work can be found on the
+    <a href={path('/code-of-conduct/')}>code of conduct</a> page.
+    </p>
+
+  <h2>A place of openness and trust</h2>
+
+  <p>
+    Contributions can be made under a real name or a pseudonym. Institutional verification is available for
+    people who want to establish that they are connected to a research institution without revealing their
+    email address.
+  </p>
+
+  <p>
+    Published contributions are openly available under a <a href={LICENCE.url} rel="license"
+      >{LICENCE.fullName} ({LICENCE.name})</a
+    >, and the underlying corpus is made available as structured data.
+  </p> 
+
+  <p>
+    While MathemAct was not inspired by the <a class="principles__link" href={LEIDEN.url}>Leiden Declaration on Artificial Intelligence and Mathematics</a>, its aims
+    closely align with the declaration’s call for transparent disclosure of AI and computational tools in
+    mathematical work.
+  </p>
+
+  <p>
+    <b>MathemAct is an independent project and is not affiliated with any existing group or institution.</b>
+  </p>
+
+  <h2>An experiment</h2>
+
+  <p>
+    MathemAct is itself experimental and the code is <a href={SITE.repository}>public</a>. Its structure,
+    categories, and ways of presenting information will evolve as people use it and as mathematical practice changes. 
+  </p>
+
+  <p>
+    Suggestions, criticism, complaints, and requests for new features are highly appreciated. You can
+    send them to <a href={`mailto:${SITE.contactEmail}`}>{SITE.contactEmail}</a>.
+  </p>
+
+  <p>
+    Reports of things that do not work are especially useful. If you run into technical issues, please reach out to <a href={`mailto:${SITE.contactEmail}`}>{SITE.contactEmail}</a>
+    detailing what went wrong. The website is actively maintained, even though on a volunteer basis: we will address
+    your concern at the earliest opportunity.
+  </p>
+
+  <h2>Writing mathematics</h2>
+
+  <p>
+    Accounts are written in Markdown, and TeX between dollar signs is rendered when the
+    page is built. Nothing is sent to a third-party service to typeset it.
+  </p>
+
+  <h2>Who is behind it</h2>
+
+  <p>
+    MathemAct was started by <b>Anna Zanoli</b>, a PhD student in number theory at IST Austria.
+  </p>
+
+  <p>The website is built and maintained together with her sister Emma.</p>
+</Page>
+
+<style>
+
+  .tiers {
+    margin: 0;
+  }
+
+  .tiers dt {
+    margin-block-start: var(--space-md);
+    font-family: var(--font-mono);
+    font-size: var(--size-1);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--ink-muted);
+  }
+
+  .tiers dd {
+    margin-block-start: var(--space-3xs);
+    margin-inline-start: 0;
+  }
+
+  .legend {
+    padding: 0;
+    list-style: none;
+  }
+
+  /* Inline flow, not flex — see the note in index.astro. A flex li turns the trailing
+     description into a single unbreakable item that wraps to its own line. */
+  .legend > li + li {
+    margin-block-start: var(--space-2xs);
+  }
+</style>

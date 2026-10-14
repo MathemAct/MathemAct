@@ -1,0 +1,582 @@
+---
+/**
+ * The profile: the three things a person owns about themselves, and the one thing they do
+ * not.
+ *
+ * The split is the whole design. Display name, pseudonym preference and bio are a form.
+ * Affiliation is a panel with no controls in it at all — not a disabled input, not a
+ * "contact us to change this" field, nothing that could be mistaken for a thing a
+ * determined person might find a way to set. It is derived from a confirmed address by a
+ * database trigger, and the interface should look the way the database behaves.
+ *
+ * When the address matched nothing, the explanation has to be careful. A blank space where
+ * other people have a university reads as a failure, and the most likely reason is not the
+ * person's fault or their institution's: fewer than half of active European university
+ * records in ROR carry a domain at all. Saying so, with a way to get it fixed, is the
+ * difference between "you are not one of us" and "our data is incomplete".
+ */
+import Account from '../../layouts/Account.astro';
+import Badges from '../../components/Badges.astro';
+import Field from '../../components/Field.astro';
+import FormStatus from '../../components/FormStatus.astro';
+import { path } from '../../lib/paths';
+import { SITE } from '../../lib/site';
+import { LIMITS } from '../../lib/validation';
+
+/** A prefilled report for a domain the registry has no record of. It asks for the domain
+ *  and the institution, and pointedly not for the address — we have no use for it and no
+ *  place to put it. */
+const missingInstitution = `mailto:${SITE.contactEmail}?subject=${encodeURIComponent(
+  'Missing institution domain',
+)}&body=${encodeURIComponent(
+  [
+    'Institution name:',
+    'ROR record (https://ror.org/search):',
+    'Email domain that should match (the part after the @, not your address):',
+    '',
+    'Anything that shows the domain belongs to the institution — a staff directory page, ',
+    'a department contact page — helps, because every manually added domain is recorded ',
+    'with the evidence for it.',
+  ].join('\n'),
+)}`;
+---
+
+<Account
+  title="Your profile"
+  description="Edit how you appear on MathemAct, and see what has been verified about your account."
+  gate="required"
+>
+  <div class="form-status form-status--success" data-confirmed hidden>
+    <p>Email address confirmed. The account is ready to use.</p>
+  </div>
+
+  {/* A suspension used to be visible only as a refusal from a policy when somebody tried to
+      post. It is a decision about a person and it is said in words, at the top of the page
+      they would come to and find out. Plain `.form-status`, whose ink rule is the neutral
+      state: this is the site telling somebody something, not a form they got wrong. */}
+  <div class="form-status" data-suspended hidden>
+    <p>
+      <strong>This account is suspended.</strong> You can read the site, change how you appear,
+      and erase the account. You cannot post, comment, rate, confirm or flag until the
+      suspension is lifted.
+    </p>
+    <p>
+      Nothing you have already posted was removed by this. The reason is under
+      <a href="#decisions">moderation decisions</a> below, and it says how to reply to it.
+    </p>
+  </div>
+
+  <section class="section">
+    <h2>What has been verified</h2>
+
+    {/* Wrapped rather than placed directly in the section. Astro's scoped-style attribute
+        is not applied to a child component's root element, so `.section > * + *` would
+        skip the badges and leave them jammed against the heading. The wrapper is an
+        element of this file, so it is scoped normally. */}
+    <div>
+      <Badges pending />
+    </div>
+
+    <div class="panel" data-unmatched hidden>
+      <p class="panel__heading">No institution matched</p>
+      <p>
+        Your confirmed email domain does not match any record in the <a href="https://ror.org/"
+          >Research Organization Registry</a
+        >. This is common, and it is usually a gap in the registry rather than anything
+        about you: only about 41% of active European university records in ROR carry an
+        email domain at all.
+      </p>
+      <p>
+        A personal address never matches, by design, and that is a perfectly ordinary way
+        to be here. Everything on the site works the same either way — the badge says what
+        was checked, not who is worth reading.
+      </p>
+      <p>
+        If you have an institutional address that ought to match, <a href={missingInstitution}
+          >report the missing domain</a
+        > and it will be checked by hand. Do not send your address; the domain is all that is
+        needed.
+      </p>
+    </div>
+
+    <div class="panel" data-stale hidden>
+      <p class="panel__heading">Verified over a year ago</p>
+      <p>
+        The date on a badge is part of the claim, so an old one stays visible rather than
+        quietly refreshing. Badges are re-derived automatically whenever the address on an
+        account changes.
+      </p>
+    </div>
+
+    <p class="field__hint">
+      A badge states only that an address at that institution's domain was confirmed to
+      work, on that date. Your email address itself is never displayed.
+    </p>
+  </section>
+
+  <section class="section">
+    <h2>Post a report</h2>
+
+    <p>
+      An account of how you used an AI tool in mathematical work: twelve sections, about ten
+      minutes.
+    </p>
+
+    <p class="actions" data-post-action>
+      <a class="button button--primary" href={path('/reports/new/')}>Post a report</a>
+    </p>
+
+    {/* The form refuses a suspended account with a sentence of its own, so this is not the
+        lock — it is the difference between finding that out here and finding it out after ten
+        minutes of writing. */}
+    <p class="field__hint" data-post-blocked hidden>
+      Posting is suspended for this account, so the form would refuse it. The reason is under
+      <a href="#decisions">moderation decisions</a> below.
+    </p>
+  </section>
+
+  <section class="section" id="your-submissions" data-submissions hidden>
+    <h2>Your submissions</h2>
+
+    <p class="field__hint">
+      Every report and network entry you have posted, in whatever state it is in.
+    </p>
+
+    <ul class="submissions" data-submission-list role="list"></ul>
+  </section>
+
+  {/* Decisions, including the ones with no row above them: a hidden comment, a claim, or a
+      flag you raised about somebody else's post. The overlap with "Your submissions" is
+      deliberate — the reason belongs beside the thing it is about, and it also belongs in one
+      list somebody can read from top to bottom. */}
+  <section class="section" id="decisions" data-decisions hidden>
+    <h2>Moderation decisions</h2>
+
+    <p class="field__hint">
+      What has been decided about what you posted, and about anything you flagged. Each one
+      is the sentence the moderator wrote. It does not say who decided, and — where you are
+      the author — it does not say who flagged it.
+    </p>
+
+    <ul class="submissions" data-decision-list role="list"></ul>
+  </section>
+
+  <template data-decision-template>
+    <li class="submission">
+      <p class="submission__title" data-heading></p>
+      <p class="mono submission__meta" data-meta></p>
+      <div class="submission__note">
+        <p class="submission__note-head">Why</p>
+        <p data-explanation></p>
+      </div>
+      <p class="field__hint" data-follow-up hidden></p>
+    </li>
+  </template>
+
+  {/* Cloned per row. Authored here rather than built in script so that the scoped styles
+      below actually apply to it — Astro compiles them against elements in this file. */}
+  <template data-submission-template>
+    <li class="submission">
+      <p class="submission__title" data-title></p>
+      <p class="mono submission__meta" data-meta></p>
+      <div class="submission__note" data-note-block hidden>
+        <p class="submission__note-head">Why it was hidden</p>
+        <p data-note></p>
+      </div>
+      <p class="actions" data-edit-block hidden>
+        <a class="button button--secondary" data-edit-link href="">Edit</a>
+      </p>
+      <p class="field__hint" data-no-edit hidden>
+        There is no edit screen for a network entry yet. To act on this, delete the entry
+        and submit it again with the change made.
+      </p>
+    </li>
+  </template>
+
+  <section class="section">
+    <h2>How you appear</h2>
+
+    <form class="form" id="profile" novalidate>
+      <FormStatus id="profile-status" />
+
+      <Field
+        id="display-name"
+        label="Display name"
+        required
+        autocomplete="nickname"
+        maxlength={LIMITS.displayName.max}
+        hint="Shown on everything you post."
+      />
+
+      <div class="checkbox">
+        <input class="checkbox__input" type="checkbox" id="is-pseudonym" name="is-pseudonym" />
+        <label class="checkbox__label" for="is-pseudonym">
+          Show this as a pseudonym rather than my name
+        </label>
+      </div>
+
+      <Field
+        id="bio"
+        label="Bio"
+        type="textarea"
+        maxlength={LIMITS.bio.max}
+        rows={4}
+        hint="A line or two about what you work on. Shown on your profile."
+      />
+
+      <div class="actions">
+        <button class="button button--primary" type="submit">Save changes</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="section">
+    <h2>This account</h2>
+
+    <ul class="tombstone-list">
+      <li>
+        <a href={path('/account/activity/')}>Your activity</a>
+      </li>
+      <li><a href={path('/account/password/')}>Change your password</a></li>
+      <li><a href={path('/account/sign-out/')}>Sign out of this browser</a></li>
+      <li><a href={path('/account/delete/')}>Erase this account</a></li>
+    </ul>
+  </section>
+</Account>
+
+<script>
+  import { countUnread } from '../../lib/activity';
+  import { setActivityHint } from '../../lib/activity-hint';
+  import { readAuthErrorFromUrl } from '../../lib/auth';
+  import { longDate, verificationMonth } from '../../lib/format';
+  import { path } from '../../lib/paths';
+  import { loadOwnReports } from '../../lib/reports';
+  import type { OwnSubmission } from '../../lib/reports';
+  import { loadOwnEntries } from '../../lib/network';
+  import { loadNotices, noticeContext, noticeFollowUp, noticeHeading } from '../../lib/notices';
+  import type { Notice } from '../../lib/notices';
+  import { loadProfile, saveProfile } from '../../lib/profile';
+  import { startSession, subscribeToSession } from '../../lib/session';
+  import {
+    clearFieldErrors,
+    hideStatus,
+    query,
+    setBusy,
+    showStatus,
+    validateFields,
+  } from '../../lib/forms';
+  import { validateBio, validateDisplayName } from '../../lib/validation';
+
+  const YEAR_IN_MS = 365 * 24 * 60 * 60 * 1000;
+
+  const status = query<HTMLElement>('#profile-status');
+  const form = query<HTMLFormElement>('#profile');
+  const submit = query<HTMLButtonElement>('button[type="submit"]', form);
+  const displayName = query<HTMLInputElement>('#display-name', form);
+  const isPseudonym = query<HTMLInputElement>('#is-pseudonym', form);
+  const bio = query<HTMLTextAreaElement>('#bio', form);
+
+  const badges = query<HTMLElement>('[data-badges]');
+  const institutionalBadge = query<HTMLElement>('[data-badge="institutional"]');
+  const badgeDetail = query<HTMLElement>('[data-badge-detail]');
+  const unmatched = query<HTMLElement>('[data-unmatched]');
+  const stale = query<HTMLElement>('[data-stale]');
+  const confirmed = query<HTMLElement>('[data-confirmed]');
+  const suspended = query<HTMLElement>('[data-suspended]');
+  const postAction = query<HTMLElement>('[data-post-action]');
+  const postBlocked = query<HTMLElement>('[data-post-blocked]');
+
+  // A confirmation link that expired lands here with the reason attached, and it has to be
+  // read before the client strips it. Both this and the success note are shown to whoever
+  // arrives; neither depends on the session having settled.
+  const linkError = readAuthErrorFromUrl();
+  if (linkError) {
+    showStatus(status, 'error', linkError);
+  } else if (new URLSearchParams(window.location.search).get('confirmed')) {
+    confirmed.hidden = false;
+  }
+
+  let userId: string | null = null;
+
+  subscribeToSession((state) => {
+    if (state.status !== 'signed-in') return;
+    if (userId === state.userId) return;
+
+    userId = state.userId;
+    void fill(state.userId);
+    void fillSubmissions(state.userId);
+
+    // One head count, so that the header's Activity link is right on the next page this
+    // browser loads. This page already holds a session, so it costs a round trip and no
+    // bundle; the reading pages, which must not load Supabase at all, read the stored
+    // number instead. See src/lib/activity-hint.ts.
+    void countUnread(state.userId).then(setActivityHint);
+  });
+
+  void startSession();
+
+  async function fill(id: string): Promise<void> {
+    const result = await loadProfile(id);
+
+    if (!result.ok) {
+      showStatus(status, 'error', result.message);
+      return;
+    }
+
+    const profile = result.value;
+
+    displayName.value = profile.displayName;
+    isPseudonym.checked = profile.isPseudonym;
+    bio.value = profile.bio;
+
+    suspended.hidden = !profile.isBanned;
+    postAction.hidden = profile.isBanned;
+    postBlocked.hidden = !profile.isBanned;
+
+    const institution = profile.institution;
+    unmatched.hidden = institution !== null;
+
+    if (institution) {
+      badgeDetail.textContent =
+        `${institution.name}, ${institution.country} ` +
+        `(${verificationMonth(institution.verifiedAt)})`;
+
+      stale.hidden = Date.now() - new Date(institution.verifiedAt).getTime() < YEAR_IN_MS;
+      institutionalBadge.hidden = false;
+      badges.hidden = false;
+    }
+  }
+
+  /**
+   * Everything you have posted — reports and network entries — and, on anything hidden, the
+   * reason a moderator gave.
+   *
+   * Three queries rather than one, because they are three tables and each is owned by the
+   * module that owns it. Reports and entries are merged here and sorted by date, so the
+   * section reads as "what I have posted" rather than as two lists that happen to be
+   * adjacent; the kind is on each row, which is what a person needs to know to act on it.
+   * The decisions are the third, and they are joined to the rows by subject id rather than
+   * carried on them — the note columns that used to live on public.reports went with
+   * pre-moderation, and one table that knows what was decided beats a copy on every table a
+   * decision can be about.
+   *
+   * All three are awaited together and a failure of any is survivable: whatever came back is
+   * shown. A row with its explanation missing still says it was hidden, which is the half
+   * that must not be lost.
+   *
+   * The section stays hidden when there is nothing in it. Somebody who has not posted yet
+   * does not need an empty box telling them so — the invitation to post is already above
+   * it — and a failure here leaves the section hidden rather than putting an error on a page
+   * whose main business is the profile form.
+   */
+  async function fillSubmissions(id: string): Promise<void> {
+    const [reports, entries, notices] = await Promise.all([
+      loadOwnReports(id),
+      loadOwnEntries(id),
+      loadNotices(),
+    ]);
+
+    const decisions = notices.ok ? notices.value : [];
+
+    fillDecisions(decisions);
+
+    const submissions = [
+      ...(reports.ok ? reports.value : []),
+      ...(entries.ok ? entries.value : []),
+    ].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+    if (submissions.length === 0) return;
+
+    // The current reason for each hidden thing: newest first out of the query, so the first
+    // match is the one that still applies. An older decision on the same row is history and
+    // belongs in the list below, not on the row.
+    const reasonFor = new Map<string, string>();
+    for (const notice of decisions) {
+      if (notice.role !== 'author' || notice.outcome !== 'hidden') continue;
+      if (!reasonFor.has(notice.subjectId)) reasonFor.set(notice.subjectId, notice.explanation);
+    }
+
+    const section = query<HTMLElement>('[data-submissions]');
+    const list = query<HTMLElement>('[data-submission-list]');
+    const template = query<HTMLTemplateElement>('[data-submission-template]');
+
+    list.replaceChildren(
+      ...submissions.map((submission) => {
+        const item = template.content.cloneNode(true) as DocumentFragment;
+        const row = item.firstElementChild as HTMLElement;
+
+        query<HTMLElement>('[data-title]', row).textContent = submission.title;
+        query<HTMLElement>('[data-meta]', row).textContent =
+          `${submission.kind === 'entry' ? 'Network entry' : 'Report'} · ` +
+          `${stateOf(submission)} · posted ${longDate(submission.createdAt)}`;
+
+        if (submission.status === 'hidden' && !submission.deletedAt) {
+          const reason = reasonFor.get(submission.id);
+
+          if (reason) {
+            query<HTMLElement>('[data-note-block]', row).hidden = false;
+            query<HTMLElement>('[data-note]', row).textContent = reason;
+          }
+        }
+
+        // The edit screen exists for a report and not for an entry, so an entry offers the
+        // instruction instead of a button that goes nowhere. That is the honest shape of a
+        // half-built path, and it is listed in docs/moderation.md.
+        if (submission.editable) {
+          if (submission.kind === 'report') {
+            const editBlock = query<HTMLElement>('[data-edit-block]', row);
+            editBlock.hidden = false;
+            query<HTMLAnchorElement>('[data-edit-link]', row).href =
+              path(`/account/edit-submission/?id=${submission.id}`);
+          } else {
+            query<HTMLElement>('[data-no-edit]', row).hidden = false;
+          }
+        }
+
+        return row;
+      }),
+    );
+
+    section.hidden = false;
+  }
+
+  /**
+   * Every decision you have been told about, newest first.
+   *
+   * Separate from the list above because most decisions have no row there: a hidden comment,
+   * a claim, and every answer to a flag you raised about somebody else's post. This is the
+   * only place those are readable at all — the activity feed says that something was decided
+   * and links here; the sentence itself is here.
+   */
+  function fillDecisions(notices: readonly Notice[]): void {
+    if (notices.length === 0) return;
+
+    const section = query<HTMLElement>('[data-decisions]');
+    const list = query<HTMLElement>('[data-decision-list]');
+    const template = query<HTMLTemplateElement>('[data-decision-template]');
+
+    list.replaceChildren(
+      ...notices.map((notice) => {
+        const item = template.content.cloneNode(true) as DocumentFragment;
+        const row = item.firstElementChild as HTMLElement;
+
+        query<HTMLElement>('[data-heading]', row).textContent = noticeHeading(notice);
+        query<HTMLElement>('[data-meta]', row).textContent = [
+          noticeContext(notice),
+          longDate(notice.createdAt),
+        ].join(' · ');
+        query<HTMLElement>('[data-explanation]', row).textContent = notice.explanation;
+
+        const followUp = noticeFollowUp(notice);
+        if (followUp) {
+          const element = query<HTMLElement>('[data-follow-up]', row);
+          element.textContent = followUp;
+          element.hidden = false;
+        }
+
+        return row;
+      }),
+    );
+
+    section.hidden = false;
+  }
+
+  /** The state in words rather than in the database's vocabulary. "Hidden" says what
+   *  happened; being moderated should be something you can discover rather than something
+   *  that silently happens to you. */
+  function stateOf(submission: OwnSubmission): string {
+    if (submission.deletedAt) return 'deleted by you';
+    if (submission.status === 'hidden') return 'hidden after a flag';
+    return submission.editable ? 'published, still editable' : 'published';
+  }
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    clearFieldErrors(form);
+    hideStatus(status);
+
+    if (!userId) {
+      showStatus(status, 'error', 'This session has ended. Sign in again to save changes.');
+      return;
+    }
+
+    const valid = validateFields(
+      [
+        { id: 'display-name', error: validateDisplayName(displayName.value) },
+        { id: 'bio', error: validateBio(bio.value) },
+      ],
+      form,
+    );
+
+    if (!valid) return;
+
+    setBusy(submit, true, 'Saving…');
+
+    const result = await saveProfile(userId, {
+      displayName: displayName.value,
+      isPseudonym: isPseudonym.checked,
+      bio: bio.value,
+    });
+
+    setBusy(submit, false);
+
+    if (!result.ok) {
+      showStatus(status, 'error', result.message);
+      return;
+    }
+
+    showStatus(status, 'success', 'Saved. This is how you appear on everything you post.');
+  });
+</script>
+
+<style>
+  .section + .section {
+    margin-block-start: var(--space-2xl);
+  }
+
+  .section > * + * {
+    margin-block-start: var(--space-md);
+  }
+
+  .section h2 {
+    padding-block-end: var(--space-2xs);
+    border-block-end: var(--border);
+  }
+
+  .submissions {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .submission + .submission {
+    margin-block-start: var(--space-md);
+    padding-block-start: var(--space-md);
+    border-block-start: var(--border);
+  }
+
+  .submission__title {
+    font-weight: var(--weight-semibold);
+  }
+
+  .submission__meta {
+    margin-block-start: var(--space-3xs);
+    font-size: var(--size-1);
+    letter-spacing: var(--tracking-wide);
+    color: var(--ink-muted);
+  }
+
+  /* The moderator's note, set apart by the accent rule used for anything the site is
+     saying rather than quoting. */
+  .submission__note {
+    margin-block-start: var(--space-sm);
+    padding: var(--space-sm) var(--space-md);
+    border-inline-start: var(--border-width-thick) solid var(--accent);
+    background-color: var(--surface);
+  }
+
+  .submission__note-head {
+    font-size: var(--size-1);
+    font-weight: var(--weight-semibold);
+  }
+</style>

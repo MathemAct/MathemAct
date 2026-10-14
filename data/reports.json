@@ -1,0 +1,76 @@
+[
+  {
+    "id": "fe1082ed-8b51-4116-a185-6f91f8e16e5f",
+    "schemaVersion": 2,
+    "title": "Read a paper about arithmetic statistic",
+    "area": "research",
+    "areaOther": null,
+    "taskType": "comprehension",
+    "taskSecondary": [],
+    "careerStage": "doctoral",
+    "aim": "Understand the proof of a lemma in a paper.",
+    "method": "Highlighted the relevant text in AlphaXiv and then asked the in-built AI assistant to explain it further.",
+    "outcome": "worked",
+    "outcomeNotes": "The AI assistant produced a detailed explanation of the argument, filling in the omitted steps.",
+    "verification": "I reasoned along and it all made sense. Plus, it was coherent with the proof from the paper itself.",
+    "prompts": "Can you explain this to me in more details.",
+    "transcriptExcerpt": null,
+    "transcriptUrl": null,
+    "caveats": "Nothing, I think this tool works very well for this type of task.",
+    "references": [
+      {
+        "kind": "paper",
+        "url": "https://www.alphaxiv.org/pdf/2006.02356v1",
+        "label": null
+      }
+    ],
+    "timeSpentMinutes": 10,
+    "wasPublished": "no",
+    "wasDisclosed": null,
+    "authorConfidence": 10,
+    "timeSaved": "about_an_hour",
+    "ratings": {
+      "rating_helpfulness": 10,
+      "rating_trust_before_checking": 10,
+      "rating_verification_effort": 2,
+      "rating_novelty": 2,
+      "rating_understanding_gained": 10
+    },
+    "generalises": "task_specific",
+    "learnedSomething": null,
+    "learnedNotes": null,
+    "createdAt": "2026-08-21T09:32:21.329Z",
+    "author": {
+      "id": "acef3dbd-202c-47fa-806a-3c32522f315e",
+      "displayName": "Anna Zanoli",
+      "isPseudonym": false,
+      "institution": {
+        "name": "Institute of Science and Technology Austria",
+        "country": "Austria",
+        "verifiedAt": "2026-08-17T10:39:33.352Z"
+      }
+    },
+    "tools": [
+      {
+        "name": "AlphaXiv",
+        "version": "-",
+        "usedOn": "2026-08-20",
+        "role": null
+      }
+    ],
+    "tags": [
+      {
+        "code": "math.NT",
+        "label": "Number Theory"
+      }
+    ],
+    "staleness": {
+      "latestToolUse": "2026-08-20",
+      "latestVerdict": null,
+      "latestConfirmationAt": null,
+      "confirmationCount": 0,
+      "tombstoneStatus": "unverified",
+      "isVerified": false
+    }
+  }
+]

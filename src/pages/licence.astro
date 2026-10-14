@@ -1,0 +1,103 @@
+---
+import Page from '../layouts/Page.astro';
+import { SITE, LICENCE } from '../lib/site';
+---
+
+<Page
+  title="Licence"
+  description="Everything posted on MathemAct is published under CC BY 4.0. This page explains what that means in practice."
+  lead="All contributed content is CC BY 4.0. You can copy it, adapt it, and use it in any context, including commercial ones, provided you say where it came from."
+  updated="August 2026"
+>
+  <h2>What is licensed</h2>
+
+  <p>
+    The corpus — reports, entries, comments, and claims — is contributed by its
+    authors under the{' '}
+    <a href={LICENCE.url} rel="license">{LICENCE.fullName}</a>. The licence covers the
+    text content of submissions. It does not cover transcript excerpts that reproduce a
+    third party's copyrighted output verbatim; the submitter is responsible for ensuring
+    that excerpts they paste are ones they have the right to share.
+  </p>
+
+  <p>
+    The site's own code is published under the{' '}
+    <a href={`${SITE.repository}/blob/main/LICENSE`}>MIT Licence</a>.
+    Design tokens, layout, and component code are all MIT. The IBM Plex font family is
+    licensed under the SIL Open Font Licence 1.1.
+  </p>
+
+  <h2>What CC BY 4.0 requires</h2>
+
+  <p>When you share or build on content from this site, CC BY 4.0 requires you to:</p>
+
+  <ul>
+    <li>
+      <strong>Credit the author.</strong> A display name and a link to the report page is
+      sufficient. If the author uses a pseudonym, use that.
+    </li>
+    <li>
+      <strong>Link to the licence.</strong> A link to{' '}
+      <a href={LICENCE.url}>{LICENCE.url}</a> or the text "CC BY 4.0" is enough.
+    </li>
+    <li>
+      <strong>Indicate changes.</strong> If you adapted the content, say so.
+    </li>
+  </ul>
+
+  <p>
+    Commercial use is permitted. Creating derivative works is permitted. Relicensing your
+    derivative under different terms is permitted, provided the original remains attributed
+    and the CC BY 4.0 rights are passed on to recipients of the original.
+  </p>
+
+  <h2>The downloadable dataset</h2>
+
+  <p>
+    The nightly export at{' '}
+    <a href={`${SITE.repository}/tree/main/data`}>{SITE.repository}/tree/main/data</a>{' '}
+    contains the full published corpus in JSON and CSV, under the same CC BY 4.0 terms.
+    Researchers using the dataset for analysis should cite the repository and note the date
+    of the export they used; the manifest file records both.
+  </p>
+
+  <h2>What "attribution" means for the dataset</h2>
+
+  <p>
+    A paper or analysis that draws on the MathemAct corpus should cite it roughly as:
+  </p>
+
+  <blockquote class="attribution-example">
+    <p>
+      MathemAct corpus, retrieved [date] from{' '}
+      <a href={SITE.repository}>{SITE.repository}</a>. Licensed under CC BY 4.0.
+    </p>
+  </blockquote>
+
+  <p>
+    Each report page gives its own URL if you need to cite a specific account. Individual
+    reports were contributed by the authors named on their pages.
+  </p>
+
+  <h2>Institution data</h2>
+
+  <p>
+    Institutional affiliations are derived from the{' '}
+    <a href="https://ror.org/">Research Organization Registry (ROR)</a>, which publishes its
+    data under CC0 — no restrictions apply to its use. The ROR data is not included in the
+    MathemAct export; only the derived institution name and country fields appear there.
+  </p>
+</Page>
+
+<style>
+  .attribution-example {
+    margin: 0;
+    padding: var(--space-sm) var(--space-md);
+    border-inline-start: var(--border-width-thick) solid var(--border-color);
+    font-style: normal;
+  }
+
+  .attribution-example p {
+    margin: 0;
+  }
+</style>

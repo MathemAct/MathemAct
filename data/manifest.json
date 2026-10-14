@@ -1,0 +1,61 @@
+{
+  "exportedAt": "2026-10-12T19:48:06.898Z",
+  "formatVersion": 2,
+  "generator": "scripts/export.mjs",
+  "licence": "CC BY 4.0",
+  "licenceUrl": "https://creativecommons.org/licenses/by/4.0/",
+  "files": {
+    "reports.json": {
+      "rows": 1,
+      "bytes": 2337
+    },
+    "claims.json": {
+      "rows": 1,
+      "bytes": 676
+    },
+    "claim-ratings.json": {
+      "rows": 1,
+      "bytes": 488
+    },
+    "tags.json": {
+      "rows": 32,
+      "bytes": 5122
+    },
+    "profiles.json": {
+      "rows": 2,
+      "bytes": 746
+    },
+    "comments.json": {
+      "rows": 2,
+      "bytes": 1737
+    },
+    "citations.json": {
+      "rows": 0,
+      "bytes": 3
+    },
+    "network.json": {
+      "rows": 1,
+      "bytes": 808
+    },
+    "csv/reports.csv": {
+      "rows": 1,
+      "bytes": 1445
+    },
+    "csv/report-tools.csv": {
+      "rows": 1,
+      "bytes": 116
+    },
+    "csv/report-tags.csv": {
+      "rows": 1,
+      "bytes": 96
+    },
+    "csv/report-references.csv": {
+      "rows": 1,
+      "bytes": 119
+    },
+    "csv/network.csv": {
+      "rows": 1,
+      "bytes": 718
+    }
+  }
+}

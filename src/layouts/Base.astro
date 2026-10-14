@@ -1,0 +1,643 @@
+---
+/**
+ * The page shell: skip link, header, main landmark, footer.
+ *
+ * Every page uses this. It owns the document head, the global stylesheet imports, and
+ * the two landmarks a screen reader user navigates by.
+ */
+import '../styles/tokens.css';
+import '../styles/base.css';
+// KaTeX's stylesheet, bundled by Vite so its font URLs get the base prefix and a content
+// hash automatically. Loaded on every page rather than opt-in per page: it is ~23 KB
+// before compression, the font files are fetched only when a formula actually uses them,
+// and a `math` prop that someone forgets to set is a silently broken formula.
+import 'katex/dist/katex.min.css';
+
+import { asset, path } from '../lib/paths';
+import { LICENCE, NAV, FOOTER_NAV, SITE } from '../lib/site';
+
+interface Props {
+  title: string;
+  description?: string;
+  /** Set on the home page, where "MathemAct — MathemAct" would be absurd. */
+  bareTitle?: boolean;
+  /** Use the visual landing-page header/footer treatment. */
+  landing?: boolean;
+  /**
+   * Keep this page out of search results. Set on /moderate/, which ships as the not-found
+   * page and reveals itself only to a moderator: an indexed 404 would defeat the point of
+   * not announcing it, and there is nothing on it a reader could want.
+   */
+  noindex?: boolean;
+}
+
+const {
+  title,
+  description = SITE.description,
+  bareTitle = false,
+  landing = false,
+  noindex = false,
+} = Astro.props;
+
+const documentTitle = bareTitle ? title : `${title} — ${SITE.name}`;
+const canonical = new URL(Astro.url.pathname, Astro.site);
+const here = Astro.url.pathname;
+const year = new Date().getFullYear();
+---
+
+<!doctype html>
+{/* en-GB rather than en. The copy is British English throughout, and the tag is also what
+    a browser consults when it renders `<input type="date">` — an audience that is mostly
+    European should not be shown mm/dd/yyyy on the one field where a misread date silently
+    changes what a report claims. */}
+<html lang="en-GB">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{documentTitle}</title>
+    <meta name="description" content={description} />
+    {/* Must be a literal — a browser reads this before any stylesheet, so it cannot be
+        var(--ground). Keep it in step with that token by hand; nothing checks it. */}
+    <meta name="theme-color" content="#f8f5ee" />
+    {noindex && <meta name="robots" content="noindex, nofollow" />}
+    <link rel="canonical" href={canonical.href} />
+
+    {/* Preloaded before the font stylesheet is even parsed. These two faces are on every
+        page — Sans 400 sets the body, Serif 600 sets every heading — so fetching them
+        early costs nothing and removes the worst of the swap reflow. The other twelve
+        faces are left to load on demand. crossorigin is required even same-origin,
+        because fonts are always fetched in CORS mode. */}
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      crossorigin
+      href={asset('/fonts/ibm-plex-sans-latin-400-normal.woff2')}
+    />
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      crossorigin
+      href={asset('/fonts/ibm-plex-serif-latin-600-normal.woff2')}
+    />
+    <link rel="stylesheet" href={asset('/fonts/fonts.css')} />
+  </head>
+
+  <body class:list={{ 'landing-body': landing }}>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class:list={['site-header', { 'site-header--landing': landing }]}>
+      <div class="shell site-header__inner">
+        {/* Split so the landing header can set "Act" in the accent — the verb is the
+            point of the name, and the rest of the site leaves the span alone. */}
+        <a class="wordmark" href={path('/')}>Mathem<span class="wordmark__act">Act</span></a>
+
+        <div class="header-end">
+          <nav aria-label="Main">
+            <ul class="nav" role="list">
+              {
+                NAV.map((link) => (
+                  <li>
+                    <a
+                      href={path(link.href)}
+                      aria-current={here === path(link.href) ? 'page' : undefined}
+                    >
+                      {link.label}
+                    </a>
+                  </li>
+                ))
+              }
+
+              {
+                !landing && (
+                  <li data-mod-link hidden>
+                    <a href={path('/moderate/')}>Moderation</a>
+                  </li>
+                )
+              }
+
+              {/* Always here for a signed-in reader, so it has one home on every page; what
+                  appears and disappears is the count beside it, which is the notification.
+                  A link that came and went could not be found again. The count is a guess
+                  read from localStorage — see src/lib/activity-hint.ts for why the header
+                  may not ask the database — so the link is the point and the number is a
+                  hint. Revealed by the script below with the account link. */}
+              <li data-activity-link hidden>
+                <a href={path('/account/activity/')}>
+                  Activity <span class="nav__count" data-activity-count hidden></span>
+                </a>
+              </li>
+
+              {/* Unconditional, unlike the search box and the moderation link above: the
+                  way back to your own account is the one header control that has to be in
+                  the same corner on every page, landing included. Exactly one of these two
+                  is revealed by the script below. */}
+              <li class="nav__account" data-account-link="out" hidden>
+                <a href={path('/account/sign-in/')}>Sign in</a>
+              </li>
+
+              <li class="nav__account" data-account-link="in" hidden>
+                <a
+                  href={path('/account/')}
+                  aria-current={here === path('/account/') ? 'page' : undefined}
+                >
+                  Account
+                </a>
+              </li>
+            </ul>
+          </nav>
+
+          {
+            !landing && (
+              <form
+                class="header-search"
+                role="search"
+                method="get"
+                action={path('/search/')}
+              >
+                <input
+                  class="header-search__input"
+                  type="search"
+                  name="q"
+                  placeholder="Search"
+                  aria-label="Search reports and opinions"
+                />
+              </form>
+            )
+          }
+        </div>
+      </div>
+    </header>
+
+    <script>
+      // Deliberately the only script on a reading page, and it imports nothing from
+      // Supabase. See src/lib/session-hint.ts, mod-hint.ts and activity-hint.ts.
+      import { readSessionHint } from '../lib/session-hint';
+      import { readModHint } from '../lib/mod-hint';
+      import { readActivityHint, refreshActivityHint, setActivityHint } from '../lib/activity-hint';
+
+      const hint = readSessionHint();
+
+      for (const item of document.querySelectorAll<HTMLElement>('[data-account-link]')) {
+        item.hidden = item.dataset.accountLink !== hint;
+      }
+
+      const modLink = document.querySelector<HTMLElement>('[data-mod-link]');
+      if (modLink) modLink.hidden = !readModHint();
+
+      // The link follows the session; the count follows the hint. Both conditions on the
+      // count, because a stored count outlives the session that produced it: a browser that
+      // has signed out must not still be advertising somebody's notifications.
+      const activityLink = document.querySelector<HTMLElement>('[data-activity-link]');
+
+      if (activityLink && hint === 'in') {
+        activityLink.hidden = false;
+
+        const count = activityLink.querySelector<HTMLElement>('[data-activity-count]');
+
+        const show = (waiting: number) => {
+          if (!count) return;
+          count.hidden = waiting <= 0;
+          if (waiting <= 0) return;
+
+          count.textContent = String(waiting);
+          // The number alone is a decoration until something says what it counts. The
+          // visible word "Activity" is beside it, so this only has to carry the count.
+          count.setAttribute('aria-label', `${waiting} new`);
+        };
+
+        // What the last visit to an account or comment-thread page left behind, drawn at
+        // once so the badge never waits on the network.
+        show(readActivityHint());
+
+        // Then one quiet check, so a notification arrives on whatever page the reader is on
+        // rather than on the next page that happens to load the Supabase client. Not on the
+        // activity page itself: that page zeroes the count after it has rendered, and a
+        // check racing it would put the old number back. Plain fetch, so reading pages still
+        // carry no Supabase client; see refreshActivityHint.
+        if (!location.pathname.replace(/\/+$/, '').endsWith('/account/activity')) {
+          void refreshActivityHint().then((fresh) => {
+            // Re-checked on arrival: a sign-out while the request was in flight must not
+            // leave one person's count in the browser for the next.
+            if (fresh === null || readSessionHint() !== 'in') return;
+            setActivityHint(fresh);
+            show(fresh);
+          });
+        }
+      }
+    </script>
+
+    <main id="main">
+      <slot />
+    </main>
+
+    <footer class="site-footer">
+      <div class="shell site-footer__inner">
+        <div class="site-footer__brand">
+          <a class="wordmark" href={path('/')}>Mathem<span class="wordmark__act">Act</span></a>
+          <span>Documenting AI in Mathematical Practice</span>
+        </div>
+
+        <nav aria-label="Footer">
+          <ul class="site-footer__nav" role="list">
+            {
+              FOOTER_NAV.map((link) => (
+                <li>
+                  <a href={path(link.href)}>{link.label}</a>
+                </li>
+              ))
+            }
+            <li>
+              <a href={`mailto:${SITE.contactEmail}`}>Contact</a>
+            </li>
+          </ul>
+        </nav>
+
+        <div class="site-footer__actions">
+          <a href={SITE.repository} aria-label="MathemAct on GitHub">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M12 2.5a9.5 9.5 0 0 0-3 18.5c.48.09.66-.2.66-.46v-1.68c-2.68.58-3.25-1.14-3.25-1.14-.44-1.12-1.08-1.42-1.08-1.42-.88-.6.07-.59.07-.59.97.07 1.48 1 1.48 1 .87 1.48 2.27 1.05 2.83.8.09-.62.34-1.05.61-1.29-2.14-.24-4.39-1.07-4.39-4.75 0-1.05.37-1.9 1-2.57-.1-.25-.43-1.22.1-2.54 0 0 .81-.26 2.61.98a9.1 9.1 0 0 1 4.76 0c1.8-1.24 2.61-.98 2.61-.98.53 1.32.2 2.29.1 2.54.62.67 1 1.52 1 2.57 0 3.69-2.25 4.5-4.4 4.74.35.3.65.89.65 1.79v2.65c0 .26.18.56.66.46A9.5 9.5 0 0 0 12 2.5Z"
+              />
+            </svg>
+          </a>
+
+          <a href={`mailto:${SITE.contactEmail}`} aria-label="Email MathemAct">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="3" y="5" width="18" height="14" rx="1.5" />
+              <path d="m4 7 8 6 8-6" />
+            </svg>
+          </a>
+        </div>
+      </div>
+
+      <div class="shell site-footer__sub">
+        <p>
+          Contributed content is published under{' '}
+          <a href={LICENCE.url} rel="license">{LICENCE.name}</a>.
+          Contributors keep copyright and are credited.
+        </p>
+        <p class="mono">MathemAct {year}</p>
+      </div>
+    </footer>
+  </body>
+</html>
+
+<style>
+  /* ── Skip link ────────────────────────────────────────────────────────────────────
+     Parked above the viewport and brought down on focus. First thing in the tab order,
+     so a keyboard user never has to walk the navigation to reach the content. No
+     transition: this needs to be instant and unambiguous, not animated. */
+  .skip-link {
+    position: absolute;
+    top: 0;
+    left: var(--gutter);
+    z-index: 10;
+    padding: var(--space-2xs) var(--space-sm);
+    border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+    background-color: var(--ink);
+    color: var(--ground);
+    font-size: var(--size-2);
+    text-decoration: none;
+    transform: translateY(-110%);
+  }
+
+  .skip-link:focus {
+    transform: translateY(0);
+  }
+
+  /* ── Header ─────────────────────────────────────────────────────────────────────── */
+  .site-header {
+    border-block-end: var(--border);
+  }
+
+  .site-header__inner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-2xs) var(--space-md);
+    padding-block: var(--space-md);
+  }
+
+  .header-end {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: var(--space-2xs) var(--space-md);
+  }
+
+  .header-search__input {
+    width: 14ch;
+    padding: var(--space-3xs) var(--space-2xs);
+    border: var(--border);
+    border-radius: var(--radius-sm);
+    background-color: transparent;
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: var(--size-2);
+    line-height: inherit;
+    transition: width 0.15s ease, border-color 0.1s;
+  }
+
+  .header-search__input::placeholder {
+    color: var(--ink-muted);
+  }
+
+  .header-search__input:focus {
+    width: 22ch;
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+    border-color: var(--accent);
+  }
+
+  @media (max-width: 26rem) {
+    .header-search__input {
+      width: 100%;
+    }
+    .header-search__input:focus {
+      width: 100%;
+    }
+  }
+
+  .wordmark {
+    color: var(--ink);
+    font-family: var(--font-serif);
+    font-size: var(--size-5);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-tight);
+    line-height: 1;
+    text-decoration: none;
+  }
+
+  /* The verb is the point of the name, so it carries the accent — on every page, not
+     just the home page. Only that half responds to hover: the whole mark changing colour
+     at 24px reads as a link doing something, and this one only ever goes home. */
+  .wordmark__act {
+    color: var(--accent);
+  }
+
+  .wordmark:hover .wordmark__act {
+    color: var(--accent-strong);
+  }
+
+  /* Small tracked capitals, on every page. This started as the landing masthead and is
+     now the site's navigation: at this size the sections read as a contents list rather
+     than as a row of links, which is what stops them competing with the page title
+     directly underneath. */
+  .nav {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: clamp(var(--space-sm), 2.4vw, var(--space-xl));
+    margin: 0;
+    padding: 0;
+    font-size: var(--size-1);
+  }
+
+  .nav a {
+    color: var(--ink);
+    font-weight: var(--weight-semibold);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    text-decoration: none;
+  }
+
+  .nav a:hover {
+    color: var(--accent);
+  }
+
+  /* The account link is a different kind of destination from the content nav — it is
+     about you rather than about the site — so it is set apart by a rule rather than just
+     by position. Dropped on narrow screens, where a vertical rule between wrapped items
+     lands in the wrong place. */
+  /* The count beside "Activity" — the notification. Mono, like every other number on this
+     site, and the one filled shape in the header because it is the one thing asking to be
+     noticed. This used to be bare accent-coloured digits ("not a filled circle"), which
+     was easy to miss once the link was always present; a small square-cornered tab keeps
+     the weight without borrowing the round bubble from another kind of product. Ground on
+     accent is well above 4.5:1, and the number carries the meaning, not the colour. */
+  .nav__count {
+    display: inline-block;
+    min-width: 1.4em;
+    padding: 0 0.35em;
+    border-radius: 2px;
+    background: var(--accent);
+    color: var(--ground);
+    font-family: var(--font-mono);
+    font-size: var(--size-0);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.4;
+    text-align: center;
+  }
+
+  .nav__account {
+    padding-inline-start: var(--space-md);
+    border-inline-start: var(--border);
+  }
+
+  @media (max-width: 26rem) {
+    .nav__account {
+      padding-inline-start: 0;
+      border-inline-start: 0;
+    }
+  }
+
+  /* The current page is marked with a dot under it as well as the attribute, so the cue
+     is not carried by colour alone. A dot rather than the underline this used to be:
+     at 0.14em tracking an underline runs past the last letter by a whole space and reads
+     as a text decoration on a link, which is the one thing it must not look like. */
+  .nav a[aria-current='page'] {
+    position: relative;
+    color: var(--accent);
+  }
+
+  .nav a[aria-current='page']::after {
+    content: '';
+    position: absolute;
+    inset-block-start: calc(100% + 0.45em);
+    inset-inline-start: 50%;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--accent);
+    transform: translateX(-50%);
+  }
+
+  /* ── Footer ─────────────────────────────────────────────────────────────────────── */
+  .site-footer {
+    padding-block: var(--space-md);
+    border: 0;
+    background: var(--home-ink);
+    color: var(--home-paper);
+    font-size: var(--size-2);
+  }
+
+  .site-footer__inner {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    align-items: center;
+    gap: var(--space-xl);
+  }
+
+  .site-footer__brand {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+
+  .site-footer__brand .wordmark {
+    color: var(--home-paper);
+    font-size: var(--size-5);
+  }
+
+  .site-footer__brand .wordmark:hover {
+    color: white;
+  }
+
+  /* Paper, not the accent: --home-red on --home-ink is 2.6:1 and the wordmark is text.
+     The split still reads, because the footer mark is small and the header carries it. */
+  .site-footer__brand .wordmark__act {
+    color: inherit;
+  }
+
+  /* Direct child only. The wordmark now contains a span of its own, and a descendant
+     selector here set "Act" in 12px muted grey — the same shape of trap as the
+     `.card__facts > li + li` one in CLAUDE.md, and just as quiet: it reads as a
+     deliberate lockup rather than as a rule matching one element too many. */
+  .site-footer__brand > span {
+    font-size: var(--size-0);
+    color: color-mix(in srgb, var(--home-paper) 72%, transparent);
+  }
+
+  .site-footer__nav {
+    display: flex;
+    gap: var(--space-lg);
+    margin: 0;
+    padding: 0;
+  }
+
+  .site-footer__nav a {
+    color: var(--home-paper);
+    text-decoration: none;
+  }
+
+  .site-footer__nav a:hover {
+    color: white;
+  }
+
+  .site-footer__actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+  }
+
+  .site-footer__actions a {
+    color: var(--home-paper);
+  }
+
+  .site-footer__actions svg {
+    width: 1.25rem;
+    height: 1.25rem;
+    fill: currentColor;
+    stroke: currentColor;
+    stroke-width: 1.5;
+  }
+
+  .site-footer__actions svg path {
+    vector-effect: non-scaling-stroke;
+  }
+
+  .site-footer__sub {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--space-sm);
+    margin-block-start: var(--space-sm);
+    padding-block-start: var(--space-sm);
+    border-block-start: 1px solid color-mix(in srgb, var(--home-paper) 18%, transparent);
+    font-size: var(--size-1);
+    color: color-mix(in srgb, var(--home-paper) 62%, transparent);
+  }
+
+  .site-footer__sub a {
+    color: inherit;
+    text-decoration-color: color-mix(in srgb, currentColor 50%, transparent);
+  }
+
+  .mono {
+    font-family: var(--font-mono);
+    font-size: var(--size-1);
+    letter-spacing: var(--tracking-wide);
+  }
+
+  /* ── Narrow screens ─────────────────────────────────────────────────────────────
+     Checked at 360px. The header stacks rather than compressing the wordmark, because
+     a wrapped two-word wordmark reads worse than a taller header. */
+  @media (max-width: 26rem) {
+    .site-header__inner {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: var(--space-xs);
+    }
+  }
+
+  /* ── Landing variant ───────────────────────────────────────────────────────────────
+     Almost nothing is left here. The masthead — the accented wordmark, the tracked
+     capitals, the dot on the current section — used to live in this block and is now the
+     header on every page, which is the point of the redesign. What remains is the two
+     things a poster does that a reading page should not. */
+
+  /* Wider than the 72rem reading shell, and set on the body so the header, the hero and
+     the footer all measure from the same edge: the wordmark sitting directly above the
+     first letter of the headline is most of what makes the masthead read as one object.
+     A reading page keeps the narrower default, because 80rem of listing is too wide to
+     scan and the corpus is what people came for. */
+  .landing-body {
+    --shell-width: 80rem;
+  }
+
+  /* Bigger, and with more air around it. Everywhere else the wordmark is a way back;
+     here it is the top of a poster. */
+  .site-header--landing .site-header__inner {
+    padding-block: var(--space-md);
+  }
+
+  .site-header--landing .wordmark {
+    font-size: clamp(1.75rem, 2.6vw, 2.25rem);
+  }
+
+  @media (max-width: 48rem) {
+    .site-header--landing .site-header__inner {
+      align-items: flex-start;
+    }
+
+    .site-header--landing .header-end {
+      width: 100%;
+      margin-inline-start: 0;
+    }
+
+    .site-footer__inner {
+      grid-template-columns: 1fr;
+      gap: var(--space-md);
+    }
+
+    .site-footer__nav {
+      flex-wrap: wrap;
+      gap: var(--space-sm) var(--space-lg);
+    }
+
+    .site-footer__sub {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+  }
+
+  @media (max-height: 720px) {
+    .site-header--landing .site-header__inner {
+      padding-block: var(--space-sm);
+    }
+  }
+</style>

@@ -1,0 +1,627 @@
+/* Form and control styles, shared by every account page.
+ *
+ * Why a stylesheet rather than component styles
+ * --------------------------------------------
+ * Astro scopes a component's styles with a per-file attribute that is not applied to a
+ * child component's root element. A form built from Field, Turnstile and a handful of
+ * buttons therefore cannot be styled from the page that assembles it — the selectors
+ * compile to something matching nothing, silently. These classes are used across eight
+ * pages and three components, so they live in one layered stylesheet instead, exactly as
+ * the layout primitives in base.css do.
+ *
+ * Layered, so any component that needs to override a rule here can, without a longer
+ * selector: Astro's scoped styles are unlayered and unlayered wins.
+ *
+ * Palette discipline: nothing here introduces a colour. The three outcome colours are
+ * deliberately absent, including from the destructive button — CLAUDE.md reserves them for
+ * reporting what happened to a report, and a red delete button would be the first place
+ * they stopped meaning that. A destructive action is marked by its words and its
+ * confirmation step, which is the honest signal anyway.
+ */
+
+@layer forms {
+  /* ── The account page body ──────────────────────────────────────────────────────── */
+  /* Owned by Account.astro but written here, because it styles slotted content. What a
+     page puts in the slot is authored in the page, so it carries the page's scope
+     attribute rather than the layout's, and a scoped `.account__body > * + *` in the
+     layout would compile to a selector matching nothing at all. Same trap as passing a
+     class to a component, one level further out. */
+
+  .account__body[hidden] {
+    display: none;
+  }
+
+  .account__body > * + * {
+    margin-block-start: var(--space-lg);
+  }
+
+  /* ── Form ───────────────────────────────────────────────────────────────────────── */
+
+  .form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+    max-width: var(--measure-narrow);
+  }
+
+  .form fieldset {
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  /* ── Field ──────────────────────────────────────────────────────────────────────── */
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3xs);
+  }
+
+  .field__label {
+    font-weight: var(--weight-semibold);
+  }
+
+  /* Marked in words, not with an asterisk. An asterisk is a footnote marker that a screen
+     reader reads as "star" and that half of readers take to mean "optional". */
+  .field__optional {
+    margin-inline-start: var(--space-2xs);
+    color: var(--ink-muted);
+    font-weight: var(--weight-normal);
+    font-size: var(--size-2);
+  }
+
+  .field__hint {
+    max-width: var(--measure);
+    color: var(--ink-muted);
+    font-size: var(--size-2);
+  }
+
+  .field__hint > p + p {
+    margin-block-start: var(--space-2xs);
+  }
+
+  .field__control {
+    width: 100%;
+    padding: var(--space-2xs) var(--space-xs);
+    border: var(--border-width) solid var(--ink-muted);
+    border-radius: var(--radius-sm);
+    background-color: var(--surface);
+    color: var(--ink);
+    font-family: inherit;
+    font-size: var(--size-3);
+  }
+
+  /* Addresses and passwords are strings a machine parses, and mono makes a transposed
+     character visible. The same reasoning as every other mono decision on this site. */
+  .field__control[type='email'],
+  .field__control[type='password'] {
+    font-family: var(--font-mono);
+    font-size: var(--size-2);
+  }
+
+  textarea.field__control {
+    min-height: 6rem;
+    resize: vertical;
+    line-height: var(--leading-normal);
+  }
+
+  /* Never colour alone: an invalid field also gets a message below it, and the message is
+     what assistive tech announces. The thicker border is the redundant visual cue. */
+  .field__control[aria-invalid='true'] {
+    border-width: var(--border-width-thick);
+    border-color: var(--ink);
+  }
+
+  .field__error {
+    max-width: var(--measure);
+    font-size: var(--size-2);
+    font-weight: var(--weight-semibold);
+  }
+
+  .field__error[hidden] {
+    display: none;
+  }
+
+  /* Live character count. Muted until the field is close to its cap, then ink — never a
+     colour, because "you are near a limit" is not one of the three outcome meanings and
+     nothing else on this site is allowed to borrow them. */
+  .field__counter {
+    color: var(--ink-muted);
+    font-family: var(--font-mono);
+    font-size: var(--size-0);
+    letter-spacing: var(--tracking-wide);
+  }
+
+  .field__counter[data-near] {
+    color: var(--ink);
+    font-weight: var(--weight-semibold);
+  }
+
+  /* A worked example, collapsed. Long enough to be genuinely useful, which is exactly why
+     it is not sitting between the label and the input. */
+  .field__example {
+    max-width: var(--measure);
+    font-size: var(--size-2);
+  }
+
+  .field__example > summary {
+    color: var(--accent);
+    cursor: pointer;
+  }
+
+  .field__example > summary:hover {
+    color: var(--accent-strong);
+  }
+
+  .field__example > p {
+    margin-block-start: var(--space-2xs);
+    padding: var(--space-2xs) var(--space-xs);
+    border-inline-start: var(--border-width-thick) solid var(--rule);
+    color: var(--ink-muted);
+    /* Examples of stepwise method are written with newlines and have to keep them. */
+    white-space: pre-line;
+  }
+
+  /* ── Checkbox ───────────────────────────────────────────────────────────────────── */
+
+  .checkbox {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: var(--space-3xs) var(--space-2xs);
+    align-items: start;
+  }
+
+  .checkbox__input {
+    width: 1em;
+    height: 1em;
+    margin: 0;
+    /* Nudged onto the first line's optical centre rather than its box top. */
+    margin-block-start: 0.32em;
+    accent-color: var(--accent);
+  }
+
+  .checkbox__label {
+    grid-column: 2;
+  }
+
+  .checkbox__hint {
+    grid-column: 2;
+    max-width: var(--measure);
+    color: var(--ink-muted);
+    font-size: var(--size-2);
+  }
+
+  /* ── Buttons ────────────────────────────────────────────────────────────────────── */
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-sm);
+  }
+
+  /* The pair from the home page: a filled accent primary and an outlined secondary in the
+     same accent, so a call to action looks the same on a form as it does on the poster
+     that sent someone to it.
+
+     This used to be ink, on the reasoning that a filled accent button would put the same
+     colour on a control and on a link in one sentence and make neither mean anything.
+     That reasoning was written when the accent was chalk blue and the primary button was
+     the only filled thing on the page. It is weaker now and still worth remembering: keep
+     the number of buttons per screen small, and keep --button--quiet for anything that is
+     an escape hatch rather than an action. Two red buttons in a row is a design smell. */
+  .button {
+    display: inline-block;
+    padding: var(--space-2xs) var(--space-md);
+    border: var(--border-width) solid var(--accent);
+    border-radius: var(--radius-sm);
+    background-color: transparent;
+    color: var(--accent);
+    font-size: var(--size-3);
+    font-weight: var(--weight-semibold);
+    text-align: center;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background-color var(--motion-fast) var(--motion-ease),
+      border-color var(--motion-fast) var(--motion-ease),
+      color var(--motion-fast) var(--motion-ease);
+  }
+
+  .button:hover {
+    background-color: var(--accent);
+    color: var(--ground);
+  }
+
+  .button--primary {
+    background-color: var(--accent);
+    color: var(--ground);
+  }
+
+  .button--primary:hover {
+    border-color: var(--accent-strong);
+    background-color: var(--accent-strong);
+    color: var(--ground);
+  }
+
+  .button--quiet {
+    border-color: var(--rule);
+    color: var(--ink-muted);
+  }
+
+  .button[disabled],
+  .button[aria-disabled='true'] {
+    border-color: var(--rule);
+    background-color: transparent;
+    color: var(--ink-muted);
+    cursor: not-allowed;
+  }
+
+  .button--primary[disabled] {
+    background-color: var(--rule);
+    color: var(--ink-muted);
+  }
+
+  /* A button that reads as a link. Used where an action sits inside running content and a
+     row of bordered buttons under every comment would out-weigh the comment — Reply, Edit,
+     Delete, Flag. It is a `button`, not an `a`, because it goes nowhere; the styling is
+     the only thing borrowed. The focus ring comes from the reset and is not touched here. */
+  .link-button {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--accent);
+    font-family: var(--font-sans);
+    font-size: var(--size-2);
+    text-decoration: underline;
+    text-underline-offset: 0.15em;
+    cursor: pointer;
+  }
+
+  .link-button:hover {
+    color: var(--accent-strong);
+  }
+
+  /* ── Status ─────────────────────────────────────────────────────────────────────── */
+  /* One live region per form. Errors say what went wrong and what to do about it, and
+     never apologise; see the copy conventions in CLAUDE.md. */
+
+  .form-status {
+    max-width: var(--measure);
+    padding: var(--space-xs) var(--space-sm);
+    border: var(--border);
+    border-inline-start-width: var(--border-width-thick);
+    border-inline-start-color: var(--ink);
+    background-color: var(--surface);
+    font-size: var(--size-2);
+  }
+
+  .form-status[hidden] {
+    display: none;
+  }
+
+  .form-status--success {
+    border-inline-start-color: var(--accent);
+  }
+
+  .form-status--notice {
+    border-inline-start-color: var(--rule);
+  }
+
+  .form-status > p + p {
+    margin-block-start: var(--space-2xs);
+  }
+
+  /* ── Panel ──────────────────────────────────────────────────────────────────────── */
+  /* A bordered block for something read rather than filled in: the affiliation summary,
+     the standing deletion request, the unavailable notice. */
+
+  .panel {
+    max-width: var(--measure);
+    padding: var(--space-md);
+    border: var(--border);
+    background-color: var(--surface);
+  }
+
+  .panel > * + * {
+    margin-block-start: var(--space-sm);
+  }
+
+  .panel__heading {
+    font-family: var(--font-mono);
+    font-size: var(--size-1);
+    font-weight: var(--weight-normal);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--ink-muted);
+  }
+
+  /* ── Metadata ───────────────────────────────────────────────────────────────────── */
+
+  .meta {
+    color: var(--ink-muted);
+    font-family: var(--font-mono);
+    font-size: var(--size-1);
+    letter-spacing: var(--tracking-wide);
+  }
+
+  /* ── The submission form ────────────────────────────────────────────────────────── */
+  /* One scrolling page with twelve numbered sections, not a wizard. Researchers want to
+     see the whole shape of the ask before they start, and a wizard hides how much is left
+     while making it impossible to answer field nine before field four. */
+
+  .report-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2xl);
+    max-width: var(--width-prose);
+  }
+
+  .form-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+    scroll-margin-top: 6rem;
+  }
+
+  .form-section__head {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: baseline;
+    gap: var(--space-2xs);
+    padding-block-end: var(--space-2xs);
+    border-block-end: var(--border);
+  }
+
+  /* The section marker: a square that fills when the section has an answer. The same glyph
+     as the tombstone and used for the same reason — it encodes something true rather than
+     decorating. Drawn in CSS, never typed: U+25A0 is outside our font subsets. */
+  .form-section__mark {
+    width: var(--tombstone-size);
+    height: var(--tombstone-size);
+    align-self: center;
+    border: 1.5px solid var(--rule);
+  }
+
+  .form-section[data-complete] .form-section__mark {
+    border-color: var(--ink);
+    background-color: var(--ink);
+  }
+
+  .form-section__number {
+    font-family: var(--font-mono);
+    font-size: var(--size-1);
+    letter-spacing: var(--tracking-wide);
+    color: var(--ink-muted);
+  }
+
+  .form-section__title {
+    grid-column: 2;
+    font-size: var(--size-5);
+  }
+
+  .form-section__optional {
+    margin-inline-start: var(--space-2xs);
+    color: var(--ink-muted);
+    font-family: var(--font-sans);
+    font-size: var(--size-2);
+    font-weight: var(--weight-normal);
+    letter-spacing: 0;
+  }
+
+  .form-section__lead {
+    grid-column: 2;
+    max-width: var(--measure);
+    color: var(--ink-muted);
+    font-size: var(--size-2);
+  }
+
+  /* ── Progress ───────────────────────────────────────────────────────────────────── */
+  /* Sticky, because the point of it is to answer "how much is left" at any scroll
+     position. It reports sections rather than fields: "4 of 12" is a number somebody
+     deciding whether to start can use. */
+
+  .progress {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2xs) var(--space-md);
+    margin-block-end: var(--space-lg);
+    padding-block: var(--space-2xs);
+    border-block-end: var(--border);
+    /* Opaque: the form scrolls underneath it. */
+    background-color: var(--ground);
+  }
+
+  .progress__count {
+    font-family: var(--font-mono);
+    font-size: var(--size-1);
+    letter-spacing: var(--tracking-wide);
+  }
+
+  .progress__track {
+    flex: 1 1 8rem;
+    height: 4px;
+    border: var(--border);
+    background-color: var(--surface);
+  }
+
+  /* display: block is load-bearing. As an inline span, height: 100% resolves to nothing and
+     the bar is invisible — the track renders, the fill does not, and the indicator silently
+     reports no progress however much of the form is done. */
+  .progress__bar {
+    display: block;
+    height: 100%;
+    background-color: var(--accent);
+    transition: width var(--motion-base) var(--motion-ease);
+  }
+
+  /* ── Draft state ────────────────────────────────────────────────────────────────── */
+
+  .draft {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2xs) var(--space-sm);
+    font-size: var(--size-2);
+    color: var(--ink-muted);
+  }
+
+  .draft__state {
+    font-family: var(--font-mono);
+    font-size: var(--size-0);
+    letter-spacing: var(--tracking-wide);
+  }
+
+  /* ── Tool rows ──────────────────────────────────────────────────────────────────── */
+
+  .tool-row {
+    padding: var(--space-sm);
+    border: var(--border);
+    border-radius: var(--radius-sm);
+    background-color: var(--surface);
+  }
+
+  .tool-row__fields {
+    display: grid;
+    grid-template-columns: 2fr 1fr auto auto;
+    align-items: end;
+    gap: var(--space-2xs) var(--space-sm);
+  }
+
+  .tool-row__remove {
+    padding-block: var(--space-3xs);
+    font-size: var(--size-2);
+  }
+
+  /* "Tool 1", "Link 2". A repeater of unlabelled boxes reads to a screen reader as one long
+     run of identical fields, and the number is the only thing that tells them apart. Set by
+     the page's script on clone, and renumbered when a row is removed — otherwise a list goes
+     "Tool 1, Tool 3" and the numbers stop being about position. */
+  .tool-row__legend {
+    padding-inline: 0;
+    font-family: var(--font-mono);
+    font-size: var(--size-1);
+    letter-spacing: var(--tracking-wide);
+    color: var(--ink-muted);
+    text-transform: uppercase;
+  }
+
+  /* The second line of a repeater row: the tool's role, a link's label. Full width, because
+     both are prose and neither belongs in a column sized for a version number. */
+  .tool-row__wide,
+  .refs__wide {
+    grid-column: 1 / -1;
+  }
+
+  .refs__fields {
+    display: grid;
+    grid-template-columns: minmax(12rem, 1fr) 2fr auto;
+    align-items: end;
+    gap: var(--space-2xs) var(--space-sm);
+  }
+
+  .refs__warning {
+    margin-block-start: var(--space-2xs);
+    border-inline-start: var(--border-width-thick) solid var(--accent);
+    padding-inline-start: var(--space-2xs);
+  }
+
+  @media (max-width: 40rem) {
+    .tool-row__fields,
+    .refs__fields {
+      grid-template-columns: 1fr;
+      align-items: stretch;
+    }
+  }
+
+  /* ── Choice lists ───────────────────────────────────────────────────────────────── */
+  /* Area and task type: radio lists with a one-line explanation each. Not a <select>,
+     because a select hides nine of ten options and the explanations with them. */
+
+  .choices {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+    gap: var(--space-3xs) var(--space-sm);
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  /* align-content: start stops the inner rows stretching to fill the height the grid row
+     took from a taller neighbour, which otherwise floats one option's hint away from its
+     label while the one beside it sits tight. */
+  .choice {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: start;
+    align-content: start;
+    gap: 0 var(--space-2xs);
+    padding: var(--space-2xs);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+
+  .choice:hover {
+    background-color: var(--surface);
+  }
+
+  .choice:has(input:focus-visible) {
+    outline: var(--focus-ring);
+    outline-offset: 0;
+  }
+
+  .choice__input {
+    margin: 0;
+    margin-block-start: 0.32em;
+    accent-color: var(--accent);
+  }
+
+  .choice__hint {
+    grid-column: 2;
+    color: var(--ink-muted);
+    font-size: var(--size-2);
+  }
+
+  /* The secondary task types: the same twelve options as the primary, but a second answer
+     to a question already asked, so they get no explanations and pack tighter. Repeating
+     twelve hints would double the height of the section to say nothing new. */
+  .choices--compact {
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  }
+
+  .choices--compact > .field__label,
+  .choices--compact > .field__hint {
+    grid-column: 1 / -1;
+  }
+
+  .choice--compact {
+    padding-block: var(--space-3xs);
+    font-size: var(--size-2);
+  }
+
+  /* A select with nine options does not need the full measure, and a full-width select
+     reads as a text field somebody forgot to make wide enough for a sentence. */
+  .field__control--narrow {
+    max-width: 24rem;
+  }
+
+  /* ── Turnstile ──────────────────────────────────────────────────────────────────── */
+  /* The widget sizes itself; this only reserves room so the form does not jump when it
+     finishes loading. */
+
+  .turnstile {
+    min-height: 65px;
+  }
+
+  .turnstile__note {
+    max-width: var(--measure);
+    margin-block-start: var(--space-2xs);
+    color: var(--ink-muted);
+    font-size: var(--size-2);
+  }
+}

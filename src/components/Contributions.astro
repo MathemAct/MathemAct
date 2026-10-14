@@ -1,0 +1,2051 @@
+---
+/**
+ * The contributions on one claim, as two views of the same rows.
+ *
+ * Why this is not `CommentThread.astro`
+ * -------------------------------------
+ * That component's header says a thread is a thread and that splitting the two would guarantee
+ * they drift, and it was right for as long as the two surfaces were the same thing: a list of
+ * remarks under a page, threaded one level, newest at the bottom.
+ *
+ * They are no longer the same thing. **A claim is a map of positions, not a feed of comments.**
+ * Reading order here is claim, then distribution, then contributions grouped by the position
+ * they were written from, then one contribution — and none of that has an analogue on a report,
+ * where the thread is a discussion of one specific account and threading is correct. This
+ * surface has twelve groups, two views, a sort control, no replies, no nesting, and no badges.
+ * Branching `CommentThread.astro` on `parentType` would have meant two mutually exclusive
+ * markup trees and two client scripts in one file, with every shared selector a way to change
+ * how a report thread renders by accident.
+ *
+ * So the split is deliberate and the boundary is drawn where the two genuinely differ:
+ * **rendering**. Everything either surface *does* still comes from `src/lib/comments.ts` —
+ * reading the corpus, editing, deleting, flagging — so the behaviour cannot drift even though
+ * the markup has. `CommentThread.astro` is untouched by this work, and its `:scope >`
+ * discipline stays exactly as it is: report threads still nest, and a comment still contains
+ * its replies, so a descendant selector there still finds the wrong row.
+ *
+ * What the zero-JavaScript case is
+ * --------------------------------
+ * **Open a position, read those contributions.** The selector is native `<details>` — one per
+ * family, each holding one per position — and the contributions are inside them rather than
+ * filtered into view by script. Closed by default, so the view starts empty and nothing is
+ * revealed until the reader chooses a position, which is the whole point of the grouping.
+ *
+ * `:has()` hides the prompt line once anything is open, so even that much needs no script.
+ *
+ * The enhancement is: exclusive selection, the URL, opening a whole family at once, landing on
+ * the reader's own position, the sort control, and the flat view. A reader with no JavaScript
+ * loses the flat view and keeps the section.
+ *
+ * Why a contribution is rendered once
+ * -----------------------------------
+ * The flat view moves the same `<li>` nodes rather than holding a second copy of them. Two
+ * copies would mean two elements carrying one `id`, and `#comment-<id>` is a real address —
+ * the activity feed builds it to point somebody at the contribution they were told about.
+ * `data-position` on each node is what lets the move be reversed.
+ */
+import Contribution from './Contribution.astro';
+import { exportedAt } from '../lib/manifest';
+import { renderMarkdown } from '../lib/markdown';
+import {
+  FAMILIES,
+  OFF_SCALE_KEY,
+  OFF_SCALE_LABEL,
+  UNRECORDED_KEY,
+  UNRECORDED_LABEL,
+  groupKeyFor,
+  keysInFamily,
+} from '../lib/positions';
+import type { Comment } from '../lib/comments';
+
+interface Props {
+  parentId: string;
+  /** Every contribution on this claim, flat. Historical replies included — see below. */
+  contributions: readonly Comment[];
+  /** This page's own title and URL, so a passage selected here knows where it came from. */
+  title: string;
+  href: string;
+}
+
+const { parentId, contributions, title, href }: Props = Astro.props;
+
+/**
+ * Newest first, which is the default sort.
+ *
+ * Flat, and that is the point: **replies are gone on claims.** The database refuses a new one,
+ * so any `inReplyTo` still in the corpus is historical — and it is rendered here in the list
+ * like anything else rather than hidden, because a remark somebody wrote is not a schema
+ * migration's to withdraw. It simply loses its indent.
+ */
+const ordered = [...contributions].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+/** Rendered once each, up front, because `set:html` cannot await. */
+const rendered = new Map<string, string>();
+for (const contribution of ordered) {
+  rendered.set(
+    contribution.id,
+    contribution.deletedAt ? '' : await renderMarkdown(contribution.body),
+  );
+}
+
+/** Grouped by the position each was written from. `groupKeyFor` is the one place that decides,
+ *  and it is what puts the off-scale answers in their own group rather than at 5. */
+const groups = new Map<string, Comment[]>();
+for (const contribution of ordered) {
+  const key = groupKeyFor(contribution.agreementScore, contribution.positionKnown);
+  const bucket = groups.get(key);
+  if (bucket) bucket.push(contribution);
+  else groups.set(key, [contribution]);
+}
+
+/**
+ * The two directions of a position change, resolved once.
+ *
+ * `supersededBy` on a contribution is the id of the one that replaced it, so the forward lookup
+ * is a map by id. The backward one is the same relation read the other way: the contribution
+ * whose `supersededBy` points at this one. Building both here means `Contribution.astro` renders
+ * one row without scanning the claim.
+ */
+const byId = new Map(ordered.map((contribution) => [contribution.id, contribution]));
+const replacedBy = new Map<string, Comment>();
+for (const contribution of ordered) {
+  if (contribution.supersededBy) replacedBy.set(contribution.supersededBy, contribution);
+}
+
+/** `{ id, score }` or null, which is the shape the badge needs and all of it. */
+function movement(id: string | null | undefined) {
+  if (!id) return null;
+  const other = byId.get(id);
+  return other ? { id: other.id, score: other.agreementScore } : null;
+}
+
+const countIn = (key: string): number => groups.get(key)?.length ?? 0;
+const countInFamily = (familyKey: string): number =>
+  keysInFamily(familyKey).reduce((total, key) => total + countIn(key), 0);
+
+const total = ordered.length;
+const offScaleCount = countIn(OFF_SCALE_KEY);
+const unrecordedCount = countIn(UNRECORDED_KEY);
+
+/**
+ * What the script clones for a contribution the build has not seen — one just posted, or one
+ * the overlay found. Rendered by `Contribution.astro` itself, so a contribution added in the
+ * browser carries exactly the markup and the scoped styles of one added by the build; a second
+ * copy of that markup written in script would drift from the first the day either changed.
+ *
+ * Every field is overwritten before the clone is placed. `isPseudonym` is true so the pseudonym
+ * span exists to be kept or removed, and the date is now so the edit window renders open.
+ */
+const TEMPLATE: Comment = {
+  id: 'template',
+  parentType: 'claim',
+  parentId,
+  inReplyTo: null,
+  body: '',
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+  deletedAt: null,
+  author: { id: '', displayName: '', isPseudonym: true, institution: null },
+  agreementScore: null,
+  positionKnown: true,
+  supersededBy: null,
+  supersedesEarlier: false,
+  endorsedAt: null,
+  endorsements: { capturesMyView: 0, agreePositionNotReason: 0 },
+};
+---
+
+<section
+  class="contributions"
+  id="contributions"
+  data-contributions
+  data-parent-id={parentId}
+  data-node-title={title}
+  data-node-href={href}
+  data-exported-at={exportedAt() ?? ''}
+>
+  <div class="contributions__head">
+    <h2>Contributions</h2>
+    <p class="contributions__count meta" data-total>
+      {total === 0
+        ? 'No contributions yet'
+        : `${total} contribution${total === 1 ? '' : 's'}`}
+    </p>
+  </div>
+
+  {/* Both controls are `hidden` in the markup and revealed by script, because both are the
+      enhancement: without JavaScript there is one view and one order, and a control that does
+      nothing is worse than an absent one. `[hidden]` is honoured here because base.css carries
+      the project's single `!important` for exactly this — no second rule is added below. */}
+  <div class="contributions__controls">
+    <div class="viewswitch" role="group" aria-label="How to read the contributions" data-views hidden>
+      <button class="viewswitch__button" type="button" data-view-button="position" aria-pressed="true">
+        By position
+      </button>
+      <button class="viewswitch__button" type="button" data-view-button="all" aria-pressed="false">
+        All contributions
+      </button>
+    </div>
+
+    <p class="contributions__sort" data-sort-wrap hidden>
+      <label class="meta" for="contributions-sort">Order</label>
+      <select class="field__control field__control--inline" id="contributions-sort" data-sort>
+        <option value="recent">Most recent</option>
+        <option value="endorsed">Most endorsed</option>
+      </select>
+    </p>
+  </div>
+
+  {/* One of the two empty states, and the one that needs no aggregate to be sure of. The
+      other — people answered at this position and none of them wrote anything — is a fact
+      about the distribution, so it is filled in per position by script once the reader has
+      answered and the histogram is available. See `annotate()` in the script below. */}
+  <p class="contributions__empty" data-empty-claim hidden={total > 0}>
+    Nobody has written a contribution yet. The useful first one says which position you
+    argue from and why — a reason somebody at the other end of the scale could engage with.
+  </p>
+
+  {/* The groups are rendered even on a claim with no contributions, every one of them inert and
+      the whole view hidden, so that the first contribution posted in the browser — or brought in
+      by the overlay — has a group to go into. Without JavaScript nothing here is visible on an
+      empty claim, exactly as before. */}
+        <div class="view" data-view="position" hidden={total === 0}>
+          {/* Hidden by `:has()` the moment any position is open. No script involved: the
+              prompt is only true while the view really is empty. */}
+          <p class="contributions__prompt" data-prompt>
+            Choose a position to read what those participants wrote.
+          </p>
+
+          {FAMILIES.map((family) => (
+            <details class="family" data-family={family.key}>
+              <summary class="family__summary">
+                <span class="family__label">{family.label}</span>
+                <span class="family__range meta">
+                  {family.from === family.to ? family.from : `${family.from}–${family.to}`}
+                </span>
+                <span class="family__count meta" data-family-count>
+                  {countInFamily(family.key)}
+                </span>
+              </summary>
+
+              <div class="family__body">
+                {keysInFamily(family.key).map((key) =>
+                  countIn(key) === 0 ? (
+                    /* Shown but inert. A position nobody has written from is part of the shape
+                       of the claim, and hiding it would make the scale look narrower than it
+                       is — but there is nothing to open, so it is not a disclosure. */
+                    <p class="position position--inert" data-position-group={key} data-inert>
+                      <span class="position__score">{key}</span>
+                      <span class="position__note meta" data-group-note>
+                        No contributions at this position
+                      </span>
+                    </p>
+                  ) : (
+                    <details class="position" data-position-group={key}>
+                      <summary class="position__summary">
+                        <span class="position__score">{key}</span>
+                        <span class="position__count meta">
+                          {countIn(key)}{' '}
+                          {countIn(key) === 1 ? 'contribution' : 'contributions'}
+                        </span>
+                      </summary>
+
+                      <ol class="contribution-list" data-group-list={key} role="list">
+                        {(groups.get(key) ?? []).map((contribution) => (
+                          <Contribution
+                            contribution={contribution}
+                            html={rendered.get(contribution.id) ?? ''}
+                            positionKey={key}
+                            supersededBy={movement(contribution.supersededBy)}
+                            supersedes={movement(replacedBy.get(contribution.id)?.id)}
+                          />
+                        ))}
+                      </ol>
+
+                      {/* The seam for prompt 6, and deliberately empty. Writing a contribution
+                          belongs in the reader's own position group, below what is already
+                          there, collapsed behind an explicit control — so there is nothing
+                          always-visible here to have to remove later. */}
+                      <div class="position__compose" data-compose-seam={key} hidden />
+                    </details>
+                  ),
+                )}
+              </div>
+            </details>
+          ))}
+
+          {/* The twelfth group, outside the five families and after them, because it is off the
+              scale rather than at one end of it. On a claim about formalisation "I cannot judge
+              the cost, and that is the whole disagreement" is frequently the most honest thing
+              on the page; filing it at the neutral 5 would assert a position its author
+              explicitly declined to take. */}
+          {offScaleCount === 0 ? (
+            <p class="position position--inert position--offscale" data-position-group={OFF_SCALE_KEY} data-inert>
+              <span class="position__offscale-label">{OFF_SCALE_LABEL}</span>
+              <span class="position__note meta" data-group-note>No contributions</span>
+            </p>
+          ) : (
+            <details class="position position--offscale" data-position-group={OFF_SCALE_KEY}>
+              <summary class="position__summary">
+                <span class="position__offscale-label">{OFF_SCALE_LABEL}</span>
+                <span class="position__count meta">
+                  {offScaleCount} {offScaleCount === 1 ? 'contribution' : 'contributions'}
+                </span>
+              </summary>
+
+              <ol class="contribution-list" data-group-list={OFF_SCALE_KEY} role="list">
+                {(groups.get(OFF_SCALE_KEY) ?? []).map((contribution) => (
+                  <Contribution
+                    contribution={contribution}
+                    html={rendered.get(contribution.id) ?? ''}
+                    positionKey={OFF_SCALE_KEY}
+                    supersededBy={movement(contribution.supersededBy)}
+                    supersedes={movement(replacedBy.get(contribution.id)?.id)}
+                  />
+                ))}
+              </ol>
+
+              <div class="position__compose" data-compose-seam={OFF_SCALE_KEY} hidden />
+            </details>
+          )}
+
+          {/* Rendered only when it has something in it, which on a current export is never.
+              These are contributions from a `data/` written before the score column existed —
+              see UNRECORDED_KEY. They cannot go in the off-scale group, because that group
+              asserts its members were asked and declined, and an older file is no evidence for
+              that. */}
+          {unrecordedCount > 0 && (
+            <details class="position position--offscale" data-position-group={UNRECORDED_KEY}>
+              <summary class="position__summary">
+                <span class="position__offscale-label">{UNRECORDED_LABEL}</span>
+                <span class="position__count meta">
+                  {unrecordedCount} {unrecordedCount === 1 ? 'contribution' : 'contributions'}
+                </span>
+              </summary>
+
+              <p class="position__aside">
+                Written before the site recorded which position a contribution argued from.
+                They will move to their own positions at the next export.
+              </p>
+
+              <ol class="contribution-list" data-group-list={UNRECORDED_KEY} role="list">
+                {(groups.get(UNRECORDED_KEY) ?? []).map((contribution) => (
+                  <Contribution
+                    contribution={contribution}
+                    html={rendered.get(contribution.id) ?? ''}
+                    positionKey={UNRECORDED_KEY}
+                    supersededBy={movement(contribution.supersededBy)}
+                    supersedes={movement(replacedBy.get(contribution.id)?.id)}
+                  />
+                ))}
+              </ol>
+            </details>
+          )}
+        </div>
+
+        {/* The flat view. Empty in the markup: script moves the same nodes into it, so there is
+            never a second element carrying a contribution's id. Without JavaScript this stays
+            empty and hidden, and the by-position view is the whole section. */}
+        <div class="view" data-view="all" hidden>
+          <ol class="contribution-list" data-flat-list role="list" />
+        </div>
+
+  {/* ── For the browser to clone ──────────────────────────────────────────────────────
+      A `<template>` is inert: nothing inside it is rendered, focusable or found by
+      `querySelector` on the document, so the placeholder `id` below never collides with a real
+      one. The first is a contribution; the second is the disclosure an inert position becomes
+      when its first contribution arrives. */}
+  <template data-contribution-template>
+    <Contribution contribution={TEMPLATE} html="" positionKey="" />
+  </template>
+
+  <template data-position-template>
+    <details class="position" data-position-group="">
+      <summary class="position__summary">
+        <span class="position__score"></span>
+        <span class="position__count meta"></span>
+      </summary>
+      <ol class="contribution-list" data-group-list="" role="list"></ol>
+      <div class="position__compose" data-compose-seam="" hidden></div>
+    </details>
+  </template>
+
+  {/* Where the composer goes when the reader's own position group has no disclosure to sit
+      inside — an inert position, or a claim with no contributions yet. Both are the case where
+      somebody is writing the first contribution at their position. */}
+  <div class="compose-fallback" data-compose-fallback hidden></div>
+
+  {/* ── Writing one ───────────────────────────────────────────────────────────────────
+      Rendered once, here, and **moved** into the reader's own position group once that group is
+      known — which is when the claim page tells this section their score. One textarea, one
+      counter and one set of ids however many groups the page has; twelve composers would be
+      twelve places for a draft to be stranded.
+
+      **Collapsed, not gated.** The control is a plain button: not disabled, not behind a
+      warning, and not conditional on having endorsed anything first. Somebody with a genuinely
+      new point loses one click. Somebody about to retype an argument that is already three rows
+      above sees it first, which is the entire reason the box starts closed.
+
+      Ships hidden and stays hidden without JavaScript, because posting needs the database
+      anyway — there is nothing here a reader with no script could have used. */}
+  <div class="compose" data-compose hidden>
+    {/* Shown only just after a position change, and it **invites** rather than requires: the
+        control below stays exactly as collapsed as it was. Somebody who moved and has nothing
+        new to say has already done the thing that mattered — the movement is recorded, and the
+        contribution is optional. */}
+    <p class="compose__invite" data-compose-invite hidden></p>
+
+    <button class="link-button compose__reveal" type="button" data-compose-reveal>
+      None of these captures it — write my own
+    </button>
+
+    <form class="form compose__form" data-compose-form hidden novalidate>
+      {/* One line, above the box, and only ever seen by somebody who has just decided to write.
+          It is not a warning and it is not a nudge away from posting: it says what endorsing
+          buys that a variant does not, which is a count of how many people hold the reason. */}
+      <p class="compose__note">
+        If something already here says the same thing, endorsing it counts for more than posting
+        a variant — it shows how many people hold that reason.
+      </p>
+
+      <div class="field">
+        <label class="field__label" for="contribution-body">Your contribution</label>
+        <div class="field__hint" id="contribution-body-hint">
+          <p>
+            Say what your position is a reason for. Markdown, and TeX between dollar signs:
+            <code>$\pi_1(X)$</code>.
+          </p>
+        </div>
+        <textarea
+          class="field__control"
+          id="contribution-body"
+          name="contribution-body"
+          rows={6}
+          maxlength={5000}
+          aria-describedby="contribution-body-hint contribution-body-error"></textarea>
+        {/* `Field.astro` renders a counter but cannot animate it, and this is not Field.astro
+            anyway — a bespoke field, because that component has no `input` slot and would ship
+            its own default control. Either way the counter is inert until `wireCounters(form)`
+            runs, which the script below does. */}
+        <p class="field__counter" data-counter-for="contribution-body" data-max="5000">
+          <span data-counter-value>0</span> / 5000
+        </p>
+        <p class="field__error" id="contribution-body-error" hidden></p>
+      </div>
+
+      <div class="actions">
+        <button class="button button--primary" type="submit">Post</button>
+        <button class="button button--quiet" type="button" data-compose-cancel>Cancel</button>
+      </div>
+
+      <p class="field__hint">
+        You can edit it for 24 hours, and only until somebody says it captures their view — they
+        agreed to the words in front of them. Your position is recorded with it and does not
+        change if you later answer differently.
+      </p>
+    </form>
+
+    {/* Outside the form, because posting collapses the form: a confirmation written inside it
+        was hidden in the same moment it was shown. */}
+    <p class="form-status" data-compose-status role="status" tabindex="-1" hidden></p>
+  </div>
+</section>
+
+<script>
+  import {
+    deleteComment,
+    editComment,
+    fileFlag,
+    loadComment,
+    loadThread,
+    postComment,
+    FLAG_REASONS,
+    type Comment,
+    type FlagReason,
+  } from '../lib/comments';
+  import {
+    ENDORSEMENT_ACTIONS,
+    endorsementSentence,
+    loadMyEndorsements,
+    setEndorsement,
+    withdrawEndorsement,
+    type EndorsementKind,
+  } from '../lib/endorsements';
+  import { longDate } from '../lib/format';
+  import { hideStatus, setBusy, showStatus, syncCounters, wireCounters } from '../lib/forms';
+  import { loadProfile, mayPost } from '../lib/profile';
+  import {
+    FAMILIES,
+    OFF_SCALE_KEY,
+    OFF_SCALE_LABEL,
+    UNRECORDED_KEY,
+    allGroupKeys,
+    groupKeyFor,
+    isFamilyKey,
+    keysInFamily,
+    positionLabel,
+  } from '../lib/positions';
+  import { setRendered } from '../lib/render-live';
+  import { startSession, subscribeToSession } from '../lib/session';
+
+  /** Added to a body the browser could not set, so it reads as source. See Contribution.astro. */
+  const UNSET = 'contribution__body--unset';
+
+  /**
+   * By class as well as attribute, and the class is not decoration. The rating section above
+   * this one carries `data-contributions` too — the export-time count its statistics line reads —
+   * and it comes first in the document, so a bare `[data-contributions]` found the rating
+   * section. Every lookup below then searched the wrong element: the view switch, the sort, the
+   * endorsement buttons, the composer and Edit and Delete were all left hidden on every built
+   * claim page.
+   */
+  const sectionRoot = document.querySelector<HTMLElement>('.contributions[data-contributions]');
+
+  if (sectionRoot) {
+    /**
+     * Aliased, and this is the trap rather than a habit.
+     *
+     * TypeScript keeps a `const` narrowing inside arrow functions and drops it inside hoisted
+     * `function` declarations: the declaration is lifted to the top of the block, so the
+     * compiler will not assume the `if` above has run. Every `root.` inside a `function` below
+     * would otherwise be an error — and the build stays green through exactly that, which is
+     * why `astro check` is the gate and not `astro build`.
+     */
+    const root = sectionRoot;
+
+    // ── The two views ─────────────────────────────────────────────────────────────────
+
+    const views = root.querySelector<HTMLElement>('[data-views]');
+    const positionView = root.querySelector<HTMLElement>('[data-view="position"]');
+    const flatView = root.querySelector<HTMLElement>('[data-view="all"]');
+    const flatList = root.querySelector<HTMLOListElement>('[data-flat-list]');
+    const sortWrap = root.querySelector<HTMLElement>('[data-sort-wrap]');
+    const sortControl = root.querySelector<HTMLSelectElement>('[data-sort]');
+
+    // Both controls exist only once script is running, which is what makes the zero-JS case
+    // honest: one view, one order, no dead controls.
+    if (views) views.hidden = false;
+    if (sortWrap) sortWrap.hidden = false;
+
+    /** Every contribution node, held by identity rather than re-queried, because the flat view
+     *  moves them out of their groups and a selector scoped to a group would then miss them. */
+    const items = [...root.querySelectorAll<HTMLLIElement>('[data-contribution]')];
+
+    let view: 'position' | 'all' = 'position';
+
+    function showView(next: 'position' | 'all'): void {
+      view = next;
+
+      // An empty claim keeps its groups hidden: all inert, under a sentence that says so.
+      if (positionView) positionView.hidden = next !== 'position' || items.length === 0;
+      if (flatView) flatView.hidden = next !== 'all';
+
+      for (const button of root.querySelectorAll<HTMLButtonElement>('[data-view-button]')) {
+        button.setAttribute(
+          'aria-pressed',
+          String(button.dataset.viewButton === next),
+        );
+      }
+
+      if (next === 'all') {
+        // Moved, not copied. See the header: two nodes with one id would break `#comment-<id>`,
+        // which the activity feed hands out as a real address.
+        if (flatList) for (const item of items) flatList.append(item);
+      } else {
+        for (const item of items) {
+          const list = root.querySelector<HTMLOListElement>(
+            `[data-group-list="${item.dataset.position}"]`,
+          );
+          if (list) list.append(item);
+        }
+      }
+
+      sort();
+      writeUrl();
+    }
+
+    for (const button of root.querySelectorAll<HTMLButtonElement>('[data-view-button]')) {
+      button.addEventListener('click', () => {
+        showView(button.dataset.viewButton === 'all' ? 'all' : 'position');
+      });
+    }
+
+    // ── Sorting ───────────────────────────────────────────────────────────────────────
+    // Most recent, or most endorsed. **No rank numbers and no position badges**: this is an
+    // order, not a leaderboard, so nothing on a contribution says where it came in.
+
+    function sort(): void {
+      const mode = sortControl?.value === 'endorsed' ? 'endorsed' : 'recent';
+
+      const lists = [
+        ...root.querySelectorAll<HTMLOListElement>('[data-group-list]'),
+        ...(flatList ? [flatList] : []),
+      ];
+
+      for (const list of lists) {
+        const children = [...list.querySelectorAll<HTMLLIElement>(':scope > [data-contribution]')];
+
+        children.sort((a, b) => {
+          if (mode === 'endorsed') {
+            const difference =
+              Number(b.dataset.endorsements ?? 0) - Number(a.dataset.endorsements ?? 0);
+            // Newest first under an equal count, so the order is total rather than whatever
+            // the sort happened to do with the ties.
+            if (difference !== 0) return difference;
+          }
+
+          return (b.dataset.commentCreated ?? '').localeCompare(a.dataset.commentCreated ?? '');
+        });
+
+        for (const child of children) list.append(child);
+      }
+    }
+
+    sortControl?.addEventListener('change', () => {
+      sort();
+      writeUrl();
+    });
+
+    // ── Selection ─────────────────────────────────────────────────────────────────────
+    // Exclusive: picking a position closes the previous one, because the view is a map and two
+    // groups open at once is the chronological wall it exists not to be.
+
+    function groupFor(key: string): HTMLDetailsElement | null {
+      return root.querySelector<HTMLDetailsElement>(
+        `details[data-position-group="${key}"]`,
+      );
+    }
+
+    /** Every group the exclusive selection has to be able to close, which is the twelve plus
+     *  the transitional unrecorded one. `allGroupKeys()` stays the twelve the spec describes. */
+    function selectableKeys(): string[] {
+      return [...allGroupKeys(), UNRECORDED_KEY];
+    }
+
+    /**
+     * True while `select()` is rewriting the disclosures.
+     *
+     * Setting `.open` fires that element's own `toggle` event, and the handlers below call
+     * `select()` — so without this, opening a family opened its whole band and then the first
+     * child's toggle re-entered and closed every sibling it had just opened. The guard is on
+     * the listeners rather than on the setter because `toggle` is also how a reader's own click
+     * arrives, and those must still be honoured.
+     */
+    let applying = false;
+
+    function select(key: string, options: { url?: boolean } = {}): void {
+      const wanted = isFamilyKey(key) ? keysInFamily(key) : [key];
+
+      applying = true;
+
+      for (const other of selectableKeys()) {
+        const group = groupFor(other);
+        if (group) group.open = wanted.includes(other);
+      }
+
+      // A family selection opens its own disclosure too, or its positions would be revealed
+      // inside a closed parent.
+      for (const family of FAMILIES) {
+        const element = root.querySelector<HTMLDetailsElement>(
+          `details[data-family="${family.key}"]`,
+        );
+        if (!element) continue;
+
+        element.open = isFamilyKey(key)
+          ? family.key === key
+          : keysInFamily(family.key).includes(key);
+      }
+
+      applying = false;
+
+      if (options.url !== false) writeUrl(key);
+    }
+
+    /** The reader's own group, opened for them. A reader who has already answered lands on
+     *  their own position — including the off-scale group, if that is where they are. */
+    function selectOwn(score: number | null): void {
+      select(score === null ? OFF_SCALE_KEY : String(score));
+    }
+
+    // Exclusive selection, and the family-opens-its-band behaviour, wired onto the native
+    // disclosures rather than replacing them. `toggle` fires for keyboard and mouse alike.
+    // A function because a group can also come into being later, when the first contribution
+    // at an inert position arrives in the browser.
+    function wireGroup(key: string): void {
+      const group = groupFor(key);
+      group?.addEventListener('toggle', () => {
+        if (applying) return;
+        if (group.open) select(key);
+        // Closing the last open group selects nothing, so the address bar should say nothing
+        // rather than keep pointing at a position the reader has just closed.
+        else if (currentKey() === null) writeUrl(null);
+      });
+    }
+
+    for (const key of selectableKeys()) wireGroup(key);
+
+    for (const family of FAMILIES) {
+      const element = root.querySelector<HTMLDetailsElement>(
+        `details[data-family="${family.key}"]`,
+      );
+
+      element?.addEventListener('toggle', () => {
+        if (applying) return;
+
+        // Opening a family opens everything in its band, which is what makes the heading a
+        // selector rather than only a container. Closing it selects nothing.
+        if (element.open) {
+          if (!keysInFamily(family.key).some((key) => groupFor(key)?.open)) {
+            select(family.key);
+          }
+        } else {
+          // Guarded for the same reason: each of these setters fires a child's toggle, and
+          // letting them all run would clear the address bar once per position in the band.
+          applying = true;
+          for (const key of keysInFamily(family.key)) {
+            const group = groupFor(key);
+            if (group) group.open = false;
+          }
+          applying = false;
+
+          writeUrl(null);
+        }
+      });
+    }
+
+    function currentKey(): string | null {
+      for (const key of selectableKeys()) {
+        if (groupFor(key)?.open) return key;
+      }
+      return null;
+    }
+
+    // ── The URL ───────────────────────────────────────────────────────────────────────
+    // So a position is linkable and survives being copied, bookmarked or arrived at from
+    // somewhere else. `replaceState`, like the listings, because a selection is not a
+    // navigation.
+
+    function writeUrl(key?: string | null): void {
+      const url = new URL(window.location.href);
+      const selected = key === undefined ? currentKey() : key;
+
+      if (view === 'all') url.searchParams.set('view', 'all');
+      else url.searchParams.delete('view');
+
+      if (selected && view === 'position') url.searchParams.set('position', selected);
+      else url.searchParams.delete('position');
+
+      if (sortControl && sortControl.value !== 'recent') {
+        url.searchParams.set('order', sortControl.value);
+      } else {
+        url.searchParams.delete('order');
+      }
+
+      window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+    }
+
+    function readUrl(): void {
+      const params = new URLSearchParams(window.location.search);
+
+      const order = params.get('order');
+      if (sortControl && order === 'endorsed') sortControl.value = order;
+
+      if (params.get('view') === 'all') showView('all');
+      else sort();
+
+      const position = params.get('position');
+      if (position && view === 'position') select(position, { url: false });
+    }
+
+    readUrl();
+
+    /**
+     * A fragment pointing into a closed group.
+     *
+     * `#comment-<id>` is handed out by the activity feed, and the contribution it names is
+     * inside a `<details>` that starts closed. Browsers now open ancestor disclosures for a
+     * fragment target themselves, but not all of them and not on every version — and the group
+     * also has to become the *selected* one, which no browser knows to do.
+     */
+    function openHashTarget(): void {
+      const id = window.location.hash.replace('#', '');
+      if (!id) return;
+
+      const target = document.getElementById(id);
+      const key = target?.closest<HTMLElement>('[data-contribution]')?.dataset.position;
+      if (!key) return;
+
+      select(key, { url: false });
+      target?.scrollIntoView({ block: 'center' });
+    }
+
+    openHashTarget();
+    window.addEventListener('hashchange', openHashTarget);
+
+    // ── What the reader may do to their own ───────────────────────────────────────────
+    // Carried over rather than dropped. Editing, deleting and flagging exist on this surface
+    // today and removing a flag path silently would be the worst of the three.
+
+    let viewerId: string | null = null;
+
+    subscribeToSession((state) => {
+      if (state.status === 'loading') return;
+
+      viewerId = state.status === 'signed-in' ? state.userId : null;
+      void applyViewer();
+    });
+
+    void startSession();
+
+    async function applyViewer(): Promise<void> {
+      const id = viewerId;
+      const allowed = id ? await loadProfile(id).then((r) => r.ok && mayPost(r.value)) : false;
+      mayWrite = allowed;
+
+      for (const item of items) {
+        const mine = !!id && item.dataset.commentAuthor === id;
+        const removed = !!item.querySelector(':scope > .contribution__removed');
+
+        // `:scope >` throughout, and it stays even though a claim contribution can no longer
+        // contain another. The rule is the discipline rather than the current shape of the
+        // data: historical replies are rendered in this list, and the day something nests here
+        // again a descendant selector would silently find the wrong row.
+        const actions = item.querySelector<HTMLElement>(':scope > [data-comment-actions]');
+        if (!actions) continue;
+
+        /**
+         * Editing follows the window; deleting does not.
+         *
+         * A contribution is withdrawable at any age — its position stays in the distribution
+         * either way — so Delete is offered for as long as it is theirs. Edit is offered only
+         * while the guard would allow it, and where it would not, the reason is stated instead
+         * of the button. The remaining time is computed here rather than at build time, where
+         * it would be hours stale before anybody read it.
+         */
+        const window_ = actions.querySelector<HTMLElement>('[data-edit-window]');
+        const closed = actions.dataset.editOpen !== 'true';
+        const expired = expiredNow(window_);
+
+        show(actions, 'edit', mine && !removed && !closed && !expired);
+        show(actions, 'delete', mine && !removed);
+        show(actions, 'flag', allowed && !mine && !removed);
+
+        if (window_) {
+          if (expired && window_.dataset.editWindow === 'open') {
+            // Open when the page was built, past twenty-four hours by the time it was read.
+            window_.textContent = 'Editing is closed: the 24 hours have passed.';
+          } else if (!closed && !expired) {
+            window_.textContent = `You can still edit this for ${remaining(window_)}.`;
+          }
+
+          window_.hidden = !mine || removed;
+        }
+      }
+
+    /** Whether the twenty-four hours have run out since the page was built. */
+    function expiredNow(window_: HTMLElement | null): boolean {
+      const at = Number(window_?.dataset.closesAt ?? '');
+      return Number.isFinite(at) && at > 0 && at <= Date.now();
+    }
+
+    /** Coarse on purpose: nobody needs the seconds, and "3 hours" ageing into "2 hours" while
+     *  somebody reads is less odd than a countdown they did not ask for. */
+    function remaining(window_: HTMLElement): string {
+      const at = Number(window_.dataset.closesAt ?? '');
+      if (!Number.isFinite(at)) return 'a little longer';
+
+      const minutes = Math.max(0, Math.round((at - Date.now()) / 60_000));
+      if (minutes < 60) return minutes === 1 ? '1 more minute' : `${minutes} more minutes`;
+
+      const hours = Math.round(minutes / 60);
+      return hours === 1 ? 'about 1 more hour' : `about ${hours} more hours`;
+    }
+
+      await applyEndorsements();
+    }
+
+    function show(actions: HTMLElement, action: string, visible: boolean): void {
+      const button = actions.querySelector<HTMLElement>(`[data-action="${action}"]`);
+      if (button) button.hidden = !visible;
+    }
+
+    root.addEventListener('click', (event) => {
+      const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-action]');
+      if (!button) return;
+
+      const item = button.closest<HTMLElement>('[data-contribution]');
+      if (!item) return;
+
+      if (button.dataset.action === 'edit') openEditor(item);
+      if (button.dataset.action === 'delete') void remove(item);
+      if (button.dataset.action === 'flag') openFlag(item);
+    });
+
+    /** The one slot per contribution, found with `:scope >` for the reason above. */
+    function slotFor(item: HTMLElement): HTMLElement | null {
+      return item.querySelector<HTMLElement>(':scope > [data-comment-slot]');
+    }
+
+    function openEditor(item: HTMLElement): void {
+      const slot = slotFor(item);
+      const body = item.querySelector<HTMLElement>(':scope > [data-comment-body]');
+      if (!slot || !body) return;
+
+      const id = item.dataset.commentId!;
+      slot.replaceChildren();
+
+      const form = document.createElement('form');
+      form.className = 'form';
+      form.noValidate = true;
+
+      const area = document.createElement('textarea');
+      area.className = 'field__control';
+      area.rows = 5;
+      area.maxLength = 5000;
+      area.setAttribute('aria-label', 'Edit your contribution');
+
+      /**
+       * The source, not the page's text. The body on the page is rendered markdown, and
+       * starting an edit from its `textContent` loses every formula and every bit of
+       * formatting — whoever saved it would have rewritten their contribution as plain text.
+       * Read-only until the source arrives, so nothing typed is overwritten when it does. If
+       * the read fails, the rendered text is the best that is left, and it is still editable.
+       */
+      area.value = body.dataset.source ?? '';
+      if (body.dataset.source === undefined) {
+        area.readOnly = true;
+        void loadComment(id).then((loaded) => {
+          area.value = loaded.ok ? loaded.value.body : (body.textContent ?? '').trim();
+          area.readOnly = false;
+          area.focus();
+        });
+      }
+
+      const actions = document.createElement('div');
+      actions.className = 'actions';
+
+      const save = document.createElement('button');
+      save.className = 'button button--primary';
+      save.type = 'submit';
+      save.textContent = 'Save';
+
+      const cancel = document.createElement('button');
+      cancel.className = 'button button--quiet';
+      cancel.type = 'button';
+      cancel.textContent = 'Cancel';
+      cancel.addEventListener('click', () => slot.replaceChildren());
+
+      const status = document.createElement('p');
+      status.className = 'form-status';
+      status.setAttribute('role', 'status');
+      status.tabIndex = -1;
+      status.hidden = true;
+
+      actions.append(save, cancel);
+      form.append(area, actions, status);
+
+      const note = document.createElement('p');
+      note.className = 'field__hint';
+      note.textContent =
+        'Twenty-four hours, and it closes as soon as somebody says this captures their view — ' +
+        'they agreed to the words in front of them. After that, answer again and write a new ' +
+        'contribution; this one stays where it is.';
+      form.append(note);
+
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        hideStatus(status);
+
+        setBusy(save, true, 'Saving…');
+        const result = await editComment(id, area.value);
+        setBusy(save, false);
+
+        if (!result.ok) {
+          showStatus(status, 'error', result.message);
+          return;
+        }
+
+        // Set here, with the same pipeline the build uses, so the edit reads as it will for
+        // everybody else rather than as source. The source is kept on the element so a second
+        // edit starts from it without another read.
+        const source = area.value.trim();
+        body.dataset.source = source;
+        slot.replaceChildren();
+        await setRendered(body, source, UNSET);
+      });
+
+      slot.append(form);
+      area.focus();
+    }
+
+    async function remove(item: HTMLElement): Promise<void> {
+      const slot = slotFor(item);
+      if (!slot) return;
+
+      const id = item.dataset.commentId!;
+
+      slot.replaceChildren();
+
+      const panel = document.createElement('div');
+      panel.className = 'panel';
+
+      const question = document.createElement('p');
+      question.textContent =
+        'Delete this contribution? The text goes for good and your name comes off it. The ' +
+        'position it was written from stays in the distribution — a deleted contribution would ' +
+        'otherwise take a count with it.';
+
+      const actions = document.createElement('div');
+      actions.className = 'actions';
+
+      const confirm = document.createElement('button');
+      confirm.className = 'button button--primary';
+      confirm.type = 'button';
+      confirm.textContent = 'Delete';
+
+      const cancel = document.createElement('button');
+      cancel.className = 'button button--quiet';
+      cancel.type = 'button';
+      cancel.textContent = 'Keep it';
+      cancel.addEventListener('click', () => slot.replaceChildren());
+
+      const status = document.createElement('p');
+      status.className = 'form-status';
+      status.setAttribute('role', 'status');
+      status.tabIndex = -1;
+      status.hidden = true;
+
+      confirm.addEventListener('click', async () => {
+        hideStatus(status);
+        setBusy(confirm, true, 'Deleting…');
+        const result = await deleteComment(id);
+        setBusy(confirm, false);
+
+        if (!result.ok) {
+          showStatus(status, 'error', result.message);
+          return;
+        }
+
+        // In place. This used to reload, and the reload served the static page — which still
+        // had the text, the name and a Delete button, so a deletion that had worked looked as
+        // though it had not.
+        markRemoved(item);
+        void applyViewer();
+      });
+
+      actions.append(confirm, cancel);
+      panel.append(question, actions, status);
+      slot.append(panel);
+    }
+
+    /**
+     * What a deleted contribution looks like, applied in the browser: the same sentence and the
+     * same "Removed" byline the build renders from `deletedAt`. Its group, its position label and
+     * its counts stay — the position stays in the distribution either way.
+     */
+    function markRemoved(item: HTMLElement): void {
+      const body = item.querySelector<HTMLElement>(':scope > [data-comment-body]');
+      if (body) {
+        const removed = document.createElement('p');
+        removed.className = 'contribution__removed';
+        copyScope(body, removed);
+        removed.textContent =
+          'Removed by its author. The position it was written from stays in the distribution.';
+        body.replaceWith(removed);
+      }
+
+      const who = item.querySelector<HTMLElement>(':scope > .contribution__head > .contribution__who');
+      if (who) who.textContent = 'Removed';
+
+      item.dataset.commentAuthor = '';
+      slotFor(item)?.replaceChildren();
+    }
+
+    /**
+     * Give a script-made element the scoped-style attribute of an element the build made.
+     *
+     * Contribution.astro's styles are scoped, so they match only elements carrying its
+     * `data-astro-cid-*` attribute. Anything created here starts without it and would render
+     * unstyled; copying it from a neighbour is what keeps one stylesheet in charge.
+     */
+    function copyScope(from: Element, to: Element): void {
+      for (const attribute of from.attributes) {
+        if (attribute.name.startsWith('data-astro-cid-')) to.setAttribute(attribute.name, '');
+      }
+    }
+
+    function openFlag(item: HTMLElement): void {
+      const slot = slotFor(item);
+      if (!slot) return;
+
+      const id = item.dataset.commentId!;
+      slot.replaceChildren();
+
+      const form = document.createElement('form');
+      form.className = 'form';
+      form.noValidate = true;
+
+      /* A bespoke fieldset rather than `Field.astro`, and not only because this is script:
+         that component renders its own control from a `type` prop and has no `input` slot, so
+         a vocabulary passed to it as slotted content is dropped without a warning. Radios here
+         are a fieldset, as they are in ReportFields.astro. */
+      const fieldset = document.createElement('fieldset');
+      fieldset.className = 'choices';
+
+      const legend = document.createElement('legend');
+      legend.className = 'field__label';
+      legend.textContent = 'What is wrong with it?';
+      fieldset.append(legend);
+
+      for (const reason of FLAG_REASONS) {
+        const label = document.createElement('label');
+        label.className = 'choices__option';
+
+        const input = document.createElement('input');
+        input.type = 'radio';
+        input.name = `flag-${id}`;
+        input.value = reason.value;
+
+        const text = document.createElement('span');
+        text.textContent = reason.label;
+
+        label.append(input, text);
+        fieldset.append(label);
+      }
+
+      const detail = document.createElement('textarea');
+      detail.className = 'field__control';
+      detail.rows = 3;
+      detail.maxLength = 1000;
+      detail.setAttribute('aria-label', 'Anything the moderator should know (optional)');
+
+      const actions = document.createElement('div');
+      actions.className = 'actions';
+
+      const send = document.createElement('button');
+      send.className = 'button button--primary';
+      send.type = 'submit';
+      send.textContent = 'Flag it';
+
+      const cancel = document.createElement('button');
+      cancel.className = 'button button--quiet';
+      cancel.type = 'button';
+      cancel.textContent = 'Cancel';
+      cancel.addEventListener('click', () => slot.replaceChildren());
+
+      const status = document.createElement('p');
+      status.className = 'form-status';
+      status.setAttribute('role', 'status');
+      status.tabIndex = -1;
+      status.hidden = true;
+
+      actions.append(send, cancel);
+      form.append(fieldset, detail, actions, status);
+
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        hideStatus(status);
+
+        const chosen = form.querySelector<HTMLInputElement>('input[type="radio"]:checked');
+        if (!chosen || !viewerId) {
+          showStatus(status, 'error', 'Choose what is wrong with it first.');
+          return;
+        }
+
+        setBusy(send, true, 'Sending…');
+        const result = await fileFlag(
+          'comment',
+          id,
+          viewerId,
+          chosen.value as FlagReason,
+          detail.value,
+        );
+        setBusy(send, false);
+
+        if (!result.ok) {
+          showStatus(status, 'error', result.message);
+          return;
+        }
+
+        slot.replaceChildren();
+        const done = document.createElement('p');
+        done.className = 'field__hint';
+        done.textContent =
+          'Flagged. A moderator will decide and will write an explanation you can read.';
+        slot.append(done);
+      });
+
+      slot.append(form);
+    }
+
+
+    // ── Endorsement, which is not a vote ─────────────────────────────────────────────
+    /**
+     * Three states per contribution, and the third is the one worth getting right.
+     *
+     *   **Their own contribution** — the whole block is removed. Not a disabled button, not a
+     *   greyed label, nothing. A control that explains why you cannot use it is still a control
+     *   telling you it exists, and endorsing your own reason is counting yourself twice: the
+     *   contribution already carries your position.
+     *
+     *   **Signed in and answered** — both actions, the primary one first.
+     *
+     *   **Everybody else** — the counts, and a pointer at the scale. Not a sign-in wall, and
+     *   the same message for an anonymous reader as for a signed-in one who has not answered,
+     *   because the thing standing between them and this is not having a position. The scale
+     *   says what signing in is for by itself.
+     */
+    let mayWrite = false;
+    let iHaveAnswered = false;
+
+    /**
+     * What the reader has endorsed **now**, and which of those the count on the page already
+     * includes.
+     *
+     * The second used to be "what they had endorsed when the page loaded", and arithmetic
+     * relative to that was right for one visit and wrong after a reload: an endorsement made
+     * after the export was in neither the exported count nor the difference, so it dropped out
+     * of the number until the next build. Now it is decided by date — an endorsement first made
+     * before the export this page was built from is in the count; one made after is not. A kind
+     * changed after the export is the one case the date cannot settle, and the next export, a
+     * few minutes later, does.
+     */
+    const mine = new Map<string, EndorsementKind>();
+    const inBase = new Map<string, EndorsementKind>();
+
+    /** The export this page was built from. Empty on a view page, which has no count to adjust. */
+    const exportedAtMs = Date.parse(root.dataset.exportedAt ?? '');
+
+    async function applyEndorsements(): Promise<void> {
+      const id = viewerId;
+
+      for (const item of items) {
+        const block = item.querySelector<HTMLElement>(':scope > [data-endorse]');
+        if (!block) continue;
+
+        const removed = !!item.querySelector(':scope > .contribution__removed');
+        const actions = block.querySelector<HTMLElement>('[data-endorse-actions]');
+        const locked = block.querySelector<HTMLElement>('[data-endorse-locked]');
+
+        /**
+         * On the reader's own contribution, **both controls are removed from the document** —
+         * not disabled, not greyed, not left in the accessibility tree. A control that explains
+         * why you cannot use it is still a control telling you it exists, and endorsing your own
+         * reason is counting yourself twice: the contribution already carries your position.
+         *
+         * The counts stay. They are export data rendered for every reader including anonymous
+         * ones, they name nobody, and hiding them from the one person the number is about would
+         * withhold the feature's entire output from its subject. "Nothing renders" is a rule
+         * about the actions, which is what a disabled button would have been.
+         */
+        if (id && item.dataset.commentAuthor === id) {
+          actions?.remove();
+          locked?.remove();
+          continue;
+        }
+
+        const eligible = mayWrite && iHaveAnswered && !removed;
+
+        if (actions) actions.hidden = !eligible;
+        // A deleted contribution has no reason left to hold, so neither control is offered and
+        // the pointer would be pointing at nothing.
+        if (locked) locked.hidden = eligible || removed;
+      }
+
+      if (!id || !mayWrite) return;
+
+      // One query for the page. It can only ever return the caller's own rows.
+      const loaded = await loadMyEndorsements(
+        items.map((item) => item.dataset.commentId ?? ''),
+        id,
+      );
+
+      if (!loaded.ok) return;
+
+      mine.clear();
+      inBase.clear();
+      for (const [commentId, endorsement] of loaded.value) {
+        mine.set(commentId, endorsement.kind);
+        if (Date.parse(endorsement.createdAt) <= exportedAtMs) {
+          inBase.set(commentId, endorsement.kind);
+        }
+      }
+
+      for (const item of items) paintEndorsements(item);
+    }
+
+    /**
+     * Repaint one contribution's counts and button states from `mine`.
+     *
+     * The count shown is the exported base, minus the reader's endorsement if the base already
+     * holds it, plus their endorsement as it is now. See `inBase` for how the first is known.
+     */
+    function paintEndorsements(item: HTMLElement): void {
+      const block = item.querySelector<HTMLElement>(':scope > [data-endorse]');
+      if (!block) return;
+
+      const id = item.dataset.commentId ?? '';
+      const now = mine.get(id);
+      const atLoad = inBase.get(id);
+
+      for (const action of ENDORSEMENT_ACTIONS) {
+        const base = Number(
+          block.querySelector<HTMLElement>(`[data-endorse-count="${action.kind}"]`)?.dataset
+            .base ?? 0,
+        );
+
+        const shown =
+          base + (now === action.kind ? 1 : 0) - (atLoad === action.kind ? 1 : 0);
+
+        const count = block.querySelector<HTMLElement>(
+          `[data-endorse-count="${action.kind}"]`,
+        );
+        if (count) {
+          count.textContent = endorsementSentence(action.kind, shown);
+          count.hidden = shown <= 0;
+        }
+
+        const button = block.querySelector<HTMLButtonElement>(
+          `[data-endorse-kind="${action.kind}"]`,
+        );
+        if (button) {
+          const taken = now === action.kind;
+          button.setAttribute('aria-pressed', String(taken));
+          button.textContent = taken ? action.chosen : action.label;
+        }
+      }
+    }
+
+    root.addEventListener('click', (event) => {
+      const target = event.target as HTMLElement;
+
+      const pointer = target.closest<HTMLButtonElement>('[data-goto-scale]');
+      if (pointer) {
+        // The asking block is on the page and visible for exactly the readers who see this
+        // pointer — it is hidden only once somebody has answered. A DOM query rather than a
+        // shared module: two components, one page, and nothing to couple.
+        const scale = document.querySelector<HTMLElement>('[data-rate-ask]');
+        scale?.scrollIntoView({ block: 'center' });
+        scale?.querySelector<HTMLInputElement>('input[name="score"]')?.focus();
+        return;
+      }
+
+      const button = target.closest<HTMLButtonElement>('[data-endorse-kind]');
+      if (button) void endorse(button);
+    });
+
+    /**
+     * Optimistic, and rolled back **in prose** rather than by silently putting the number back.
+     *
+     * A count that reverts with no explanation reads as the page having a glitch; a sentence
+     * saying what happened is what lets somebody decide whether to try again. Mutually
+     * exclusive: choosing one replaces the other, and choosing the one already taken withdraws
+     * it, which is a real delete.
+     */
+    async function endorse(button: HTMLButtonElement): Promise<void> {
+      const item = button.closest<HTMLElement>('[data-contribution]');
+      const id = item?.dataset.commentId;
+      if (!item || !id || !viewerId) return;
+
+      const status = item.querySelector<HTMLElement>(':scope > [data-endorse] [data-endorse-status]');
+      if (status) hideStatus(status);
+
+      const kind = button.dataset.endorseKind as EndorsementKind;
+      const previous = mine.get(id);
+      const withdrawing = previous === kind;
+
+      // Shown before the request, put back if it fails.
+      if (withdrawing) mine.delete(id);
+      else mine.set(id, kind);
+      paintEndorsements(item);
+
+      for (const control of item.querySelectorAll<HTMLButtonElement>('[data-endorse-kind]')) {
+        control.disabled = true;
+      }
+
+      const result = withdrawing
+        ? await withdrawEndorsement(id, viewerId)
+        : await setEndorsement(id, viewerId, kind);
+
+      for (const control of item.querySelectorAll<HTMLButtonElement>('[data-endorse-kind]')) {
+        control.disabled = false;
+      }
+
+      if (!result.ok) {
+        if (previous === undefined) mine.delete(id);
+        else mine.set(id, previous);
+        paintEndorsements(item);
+
+        if (status) showStatus(status, 'error', result.message);
+      }
+    }
+
+    // ── Writing one ──────────────────────────────────────────────────────────────────
+    // The sequence this exists to create: the reader's own position opens, they read what
+    // people who answered the same way have already written, each of those offers "this also
+    // captures my view" — and then, below all of them, one control to write their own.
+
+    const compose = root.querySelector<HTMLElement>('[data-compose]');
+    const composeReveal = root.querySelector<HTMLButtonElement>('[data-compose-reveal]');
+    const composeForm = root.querySelector<HTMLFormElement>('[data-compose-form]');
+    const composeStatus = root.querySelector<HTMLElement>('[data-compose-status]');
+    const composeBody = root.querySelector<HTMLTextAreaElement>('#contribution-body');
+    const invite = root.querySelector<HTMLElement>('[data-compose-invite]');
+
+    /** The position the composer was placed for — kept so that, if it had to wait in the
+     *  fallback because that position was inert, it moves in once the position has a group. */
+    let composerKey: string | null = null;
+
+    if (composeForm) wireCounters(composeForm);
+
+    composeReveal?.addEventListener('click', () => {
+      if (!composeForm) return;
+      composeForm.hidden = false;
+      composeReveal.hidden = true;
+      if (composeStatus) hideStatus(composeStatus);
+      composeBody?.focus();
+    });
+
+    root.querySelector<HTMLButtonElement>('[data-compose-cancel]')?.addEventListener(
+      'click',
+      () => {
+        if (!composeForm || !composeReveal) return;
+        composeForm.hidden = true;
+        composeReveal.hidden = false;
+        if (composeStatus) hideStatus(composeStatus);
+      },
+    );
+
+    /** Moved into the group the reader answered from, below what is already there. One composer
+     *  on the page however many groups it has — twelve would be twelve stranded drafts. */
+    function placeComposer(score: number | null): void {
+      if (!compose) return;
+
+      const key = score === null ? OFF_SCALE_KEY : String(score);
+      composerKey = key;
+
+      /**
+       * Two homes, and the second is not a nicety.
+       *
+       * A position nobody has written from renders as an inert paragraph rather than a
+       * disclosure, and a claim with no contributions at all renders no groups — so in both
+       * cases there is no seam to move into. Those are exactly the moments somebody is about to
+       * write the *first* contribution at their position, which is the last case that should
+       * have nowhere to type. The fallback sits at the end of the section.
+       */
+      const seam =
+        root.querySelector<HTMLElement>(`[data-compose-seam="${key}"]`) ??
+        root.querySelector<HTMLElement>('[data-compose-fallback]');
+
+      if (!seam) return;
+
+      seam.hidden = false;
+      seam.append(compose);
+      compose.hidden = false;
+    }
+
+    composeForm?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (composeStatus) hideStatus(composeStatus);
+
+      const submit = composeForm.querySelector<HTMLButtonElement>('button[type="submit"]');
+      const body = composeBody?.value.trim() ?? '';
+
+      if (!body || !viewerId) {
+        if (composeStatus) {
+          showStatus(
+            composeStatus,
+            'error',
+            'Write something first — what your position is a reason for.',
+          );
+        }
+        return;
+      }
+
+      if (submit) setBusy(submit, true, 'Posting…');
+      const result = await postComment('claim', root.dataset.parentId ?? '', viewerId, body, null);
+      if (submit) setBusy(submit, false);
+
+      if (!result.ok) {
+        if (composeStatus) showStatus(composeStatus, 'error', result.message);
+        return;
+      }
+
+      // Posted, and put on the page set, in its group, the way everybody else will see it.
+      // Reloading instead would lose the reader's place in a page they just navigated into, and
+      // would serve the static page, which does not have it yet.
+      if (composeBody) composeBody.value = '';
+      syncCounters(composeForm);
+      composeForm.hidden = true;
+      if (composeReveal) composeReveal.hidden = false;
+
+      await addContribution(result.value);
+      const added = itemFor(result.value.id);
+      if (added?.dataset.position) select(added.dataset.position, { url: false });
+
+      if (composeStatus) {
+        showStatus(
+          composeStatus,
+          'success',
+          'Posted, and recorded as written from the position you answered from.',
+        );
+      }
+    });
+
+    // ── Contributions the build has not seen ─────────────────────────────────────────
+    /**
+     * One just posted from this page, or one the overlay found, put into the section as though
+     * the build had rendered it: in its position group, in the flat list when that is the view,
+     * counted in the totals, set rather than shown as source, and wired by the same delegated
+     * listeners as everything else. Its own Edit, Delete and endorsement controls follow from
+     * `applyViewer()`.
+     */
+    const contributionTemplate = root.querySelector<HTMLTemplateElement>(
+      '[data-contribution-template]',
+    );
+    const positionTemplate = root.querySelector<HTMLTemplateElement>('[data-position-template]');
+
+    function itemFor(id: string): HTMLLIElement | null {
+      return items.find((item) => item.dataset.commentId === id) ?? null;
+    }
+
+    async function addContribution(contribution: Comment): Promise<void> {
+      if (itemFor(contribution.id)) return;
+      // Written and deleted since the build: there is nothing to show, and the next export
+      // brings its removed note with it.
+      if (contribution.deletedAt) return;
+
+      const item = contributionTemplate?.content
+        .querySelector<HTMLLIElement>('[data-contribution]')
+        ?.cloneNode(true) as HTMLLIElement | undefined;
+      if (!item) return;
+
+      const key = groupKeyFor(contribution.agreementScore, contribution.positionKnown);
+      const list = ensureGroup(key);
+      if (!list) return;
+
+      item.id = `comment-${contribution.id}`;
+      item.dataset.position = key;
+      item.dataset.commentId = contribution.id;
+      item.dataset.commentAuthor = contribution.author?.id ?? '';
+      item.dataset.commentCreated = contribution.createdAt;
+      item.dataset.endorsements = '0';
+
+      const who = item.querySelector<HTMLElement>('.contribution__who');
+      if (who) {
+        // The template's pseudonym note is kept, scoped attribute and all, and put back after
+        // the name only when it applies.
+        const pseudonym = who.querySelector('.contribution__pseudonym');
+        who.textContent = contribution.author?.displayName ?? 'A former member';
+        if (contribution.author?.isPseudonym && pseudonym) who.append(pseudonym);
+      }
+
+      const position = item.querySelector<HTMLElement>('.contribution__position');
+      if (position) {
+        position.textContent = positionLabel(contribution.agreementScore, contribution.positionKnown);
+      }
+
+      const permalink = item.querySelector<HTMLAnchorElement>('.contribution__permalink');
+      if (permalink) {
+        permalink.href = `#comment-${contribution.id}`;
+        permalink.textContent = longDate(contribution.createdAt);
+      }
+
+      // The edit window, as Contribution.astro would have computed it for this row.
+      const actions = item.querySelector<HTMLElement>('[data-comment-actions]');
+      const window_ = item.querySelector<HTMLElement>('[data-edit-window]');
+      const created = Date.parse(contribution.createdAt);
+      if (actions) actions.dataset.editOpen = String(!contribution.endorsedAt);
+      if (window_) {
+        window_.dataset.editWindow = contribution.endorsedAt ? 'endorsed' : 'open';
+        window_.dataset.closesAt = Number.isNaN(created) ? '' : String(created + 86_400_000);
+        window_.textContent = contribution.endorsedAt
+          ? 'Editing is closed: somebody has said this captures their view.'
+          : '';
+      }
+
+      const body = item.querySelector<HTMLElement>('[data-comment-body]');
+      if (body) {
+        body.dataset.source = contribution.body;
+        await setRendered(body, contribution.body, UNSET);
+      }
+
+      (view === 'all' && flatList ? flatList : list).append(item);
+      items.push(item);
+
+      recount();
+      if (positionView) positionView.hidden = view !== 'position';
+      const empty = root.querySelector<HTMLElement>('[data-empty-claim]');
+      if (empty) empty.hidden = true;
+
+      sort();
+      void applyViewer();
+    }
+
+    /**
+     * The list for a position, making one if the position was inert.
+     *
+     * An inert position is a paragraph rather than a disclosure, because there was nothing to
+     * open. Its first contribution turns it into the same `<details>` the build renders for a
+     * position with contributions, wired for exclusive selection, with the composer's seam in it
+     * — and the composer moves in if it was waiting in the fallback for this position.
+     */
+    function ensureGroup(key: string): HTMLOListElement | null {
+      const existing = root.querySelector<HTMLOListElement>(`[data-group-list="${key}"]`);
+      if (existing) return existing;
+
+      const inert = root.querySelector<HTMLElement>(`[data-position-group="${key}"][data-inert]`);
+      const group = positionTemplate?.content
+        .querySelector<HTMLDetailsElement>('details')
+        ?.cloneNode(true) as HTMLDetailsElement | undefined;
+      if (!inert || !group) return null;
+
+      group.dataset.positionGroup = key;
+      group.querySelector<HTMLElement>('[data-group-list]')!.dataset.groupList = key;
+      group.querySelector<HTMLElement>('[data-compose-seam]')!.dataset.composeSeam = key;
+
+      const label = group.querySelector<HTMLElement>('.position__score')!;
+      if (key === OFF_SCALE_KEY) {
+        group.classList.add('position--offscale');
+        label.className = 'position__offscale-label';
+        copyScope(group, label);
+        label.textContent = OFF_SCALE_LABEL;
+      } else {
+        label.textContent = key;
+      }
+
+      inert.replaceWith(group);
+      wireGroup(key);
+
+      if (composerKey === key) placeComposer(key === OFF_SCALE_KEY ? null : Number(key));
+
+      return group.querySelector<HTMLOListElement>('[data-group-list]');
+    }
+
+    /** Every count the build wrote, written again from what is on the page now. */
+    function recount(): void {
+      const plural = (n: number) => `${n} ${n === 1 ? 'contribution' : 'contributions'}`;
+      const inKey = (key: string) => items.filter((item) => item.dataset.position === key).length;
+
+      const total = root.querySelector<HTMLElement>('[data-total]');
+      if (total) total.textContent = items.length === 0 ? 'No contributions yet' : plural(items.length);
+
+      for (const family of FAMILIES) {
+        const count = root.querySelector<HTMLElement>(
+          `details[data-family="${family.key}"] [data-family-count]`,
+        );
+        if (count) {
+          count.textContent = String(
+            keysInFamily(family.key).reduce((sum, key) => sum + inKey(key), 0),
+          );
+        }
+      }
+
+      for (const key of selectableKeys()) {
+        const count = root.querySelector<HTMLElement>(
+          `details[data-position-group="${key}"] > summary .position__count`,
+        );
+        if (count) count.textContent = plural(inKey(key));
+      }
+    }
+
+    /**
+     * A contribution the build rendered, changed since: edited, deleted, or endorsed for the
+     * first time. A row back from the overlay may carry none of those — superseding also moves
+     * `updated_at` — and setting the same text again is harmless.
+     */
+    async function patchContribution(item: HTMLElement, contribution: Comment): Promise<void> {
+      if (contribution.deletedAt) {
+        if (!item.querySelector(':scope > .contribution__removed')) markRemoved(item);
+        return;
+      }
+
+      const body = item.querySelector<HTMLElement>(':scope > [data-comment-body]');
+      if (body && body.dataset.source !== contribution.body) {
+        body.dataset.source = contribution.body;
+        await setRendered(body, contribution.body, UNSET);
+      }
+
+      const actions = item.querySelector<HTMLElement>(':scope > [data-comment-actions]');
+      if (contribution.endorsedAt && actions?.dataset.editOpen === 'true') {
+        actions.dataset.editOpen = 'false';
+        const window_ = actions.querySelector<HTMLElement>('[data-edit-window]');
+        if (window_) {
+          window_.dataset.editWindow = 'endorsed';
+          window_.textContent = 'Editing is closed: somebody has said this captures their view.';
+        }
+      }
+    }
+
+    // ── The freshness overlay, for this section ──────────────────────────────────────
+    /**
+     * What changed on this claim since the page was built, read once and applied.
+     *
+     * The site rebuilds within minutes of a write, but a reader can arrive inside those minutes,
+     * or hold a copy of the page their browser cached for ten — so without this, somebody else's
+     * new contribution, an edit or a deletion is missing exactly when people are most likely to
+     * be looking for it. On a built page this asks only for rows changed after the export the
+     * page came from, which is usually none. On the view page, which has no build, it asks for
+     * everything once the id is known.
+     *
+     * Silent on failure: the built section stands.
+     */
+    async function overlay(since: string | null): Promise<void> {
+      const parentId = root.dataset.parentId;
+      if (!parentId) return;
+
+      const result = await loadThread('claim', parentId, since);
+      if (!result.ok) return;
+
+      for (const contribution of result.value) {
+        const existing = itemFor(contribution.id);
+        if (existing) {
+          if (since) await patchContribution(existing, contribution);
+        } else {
+          await addContribution(contribution);
+        }
+      }
+
+      openHashTarget();
+    }
+
+    if (root.dataset.parentId) {
+      void overlay(root.dataset.exportedAt || null);
+    } else {
+      root.addEventListener('contributions-ready', () => void overlay(null), { once: true });
+    }
+
+    /**
+     * A contribution posted through the answering form, which belongs to the claim page and
+     * hands over only the new id — `public.answer_claim()` returns no more than that.
+     */
+    document.addEventListener('mathemact:contributed', (event) => {
+      const id = (event as CustomEvent<{ id?: string }>).detail?.id;
+      if (!id) return;
+
+      void loadComment(id).then(async (loaded) => {
+        if (!loaded.ok) return;
+        await addContribution(loaded.value);
+        const added = itemFor(id);
+        if (added?.dataset.position) select(added.dataset.position, { url: false });
+      });
+    });
+
+    // ── What only the distribution knows ─────────────────────────────────────────────
+    /**
+     * "People answered at this position and none of them wrote anything" is the interesting
+     * empty state, and it is a fact about the **distribution** — so it cannot be in the page
+     * source. The histogram is fetched after the reader has answered, precisely so that it is
+     * not, and that rule is not weakened here to make a nicer empty state.
+     *
+     * So the claim page tells this section, once, on the same event that reveals the chart.
+     * Until then an empty position says only that it has no contributions, which is all the
+     * page can honestly claim.
+     */
+    document.addEventListener('mathemact:rated', (event) => {
+      const detail = (event as CustomEvent).detail as {
+        histogram?: readonly number[];
+        noOpinionCount?: number;
+        score?: number | null;
+        rated?: boolean;
+        changed?: boolean;
+      };
+
+      annotate(detail.histogram, detail.noOpinionCount);
+
+      if (!detail.rated) return;
+
+      /**
+       * The sequence, in this order, and the order is the point.
+       *
+       * Their own position opens, so the first thing they read is what people who answered the
+       * same way have already written. Each of those now offers "this also captures my view" —
+       * the prominent action at exactly that moment. And the composer moves in below all of
+       * them, collapsed, so somebody about to retype an argument already on the page sees it
+       * first and somebody with a genuinely new point loses one click.
+       */
+      selectOwn(detail.score ?? null);
+
+      iHaveAnswered = true;
+      void applyEndorsements();
+      placeComposer(detail.score ?? null);
+
+      /**
+       * A position change invites a new contribution, and only invites one.
+       *
+       * The movement is already recorded by then — the rating update wrote a `rating_changes`
+       * row by trigger, and the earlier contribution keeps its text, its group and its score
+       * with a link forward to whatever comes next. So this is an offer rather than a step:
+       * somebody who moved and has nothing to add has already done the part that counts.
+       */
+      if (detail.changed && invite) {
+        invite.textContent =
+          detail.score === null
+            ? 'You have moved to no opinion. Whatever you wrote before stays where it was, ' +
+              'with a note of the move — write again if your reason has changed too.'
+            : `You have moved to ${detail.score}. Whatever you wrote before stays where it ` +
+              'was, with a note of the move — write again if your reason has changed too.';
+        invite.hidden = false;
+      }
+    });
+
+    function annotate(histogram?: readonly number[], noOpinionCount?: number): void {
+      if (!histogram) return;
+
+      for (const key of allGroupKeys()) {
+        const answered =
+          key === OFF_SCALE_KEY ? (noOpinionCount ?? 0) : (histogram[Number(key)] ?? 0);
+
+        const note = root.querySelector<HTMLElement>(
+          `[data-position-group="${key}"] [data-group-note]`,
+        );
+        if (!note) continue;
+
+        // Only where there is nothing to read. A position with contributions says nothing
+        // about how many people are there — the count in its summary is contributions, and
+        // conflating the two would be the page reporting the distribution twice in two units.
+        note.textContent =
+          answered === 0
+            ? 'Nobody answered here'
+            : answered === 1
+              ? '1 person answered here and wrote nothing'
+              : `${answered} people answered here and none of them wrote anything`;
+      }
+    }
+  }
+</script>
+
+<style>
+  .contributions {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+    margin-block-start: var(--space-2xl);
+    padding-block-start: var(--space-lg);
+    border-block-start: var(--border);
+  }
+
+  .contributions__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-md);
+  }
+
+  .contributions__head h2 {
+    margin: 0;
+    font-family: var(--font-serif);
+    font-size: var(--size-5);
+  }
+
+  .contributions__controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-md);
+    flex-wrap: wrap;
+  }
+
+  .viewswitch {
+    display: flex;
+    gap: 0;
+    border: var(--border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+
+  .viewswitch__button {
+    padding: var(--space-2xs) var(--space-sm);
+    border: 0;
+    background: var(--surface);
+    color: var(--ink-muted);
+    font: inherit;
+    font-size: var(--size-1);
+    cursor: pointer;
+  }
+
+  .viewswitch__button + .viewswitch__button {
+    border-inline-start: var(--border);
+  }
+
+  /* Colour is not the only carrier: the pressed state is also `aria-pressed`, which is what a
+     screen reader reads, and the weight changes with it. */
+  .viewswitch__button[aria-pressed='true'] {
+    background: var(--tint);
+    color: var(--ink);
+    font-weight: var(--weight-semibold);
+  }
+
+  .contributions__sort {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2xs);
+    margin: 0;
+  }
+
+  .field__control--inline {
+    width: auto;
+    max-width: none;
+  }
+
+  /* The prompt is true only while the view really is empty, and `:has()` is what makes that
+     need no script. One selector, no state to keep in step. */
+  .contributions__prompt {
+    margin: 0;
+    padding: var(--space-md);
+    border: var(--border);
+    border-radius: var(--radius-md);
+    background: var(--ground);
+    color: var(--ink-muted);
+  }
+
+  .view:has(details[data-position-group][open]) .contributions__prompt {
+    display: none;
+  }
+
+  .contributions__empty {
+    max-width: var(--measure);
+    margin: 0;
+    color: var(--ink-muted);
+  }
+
+  .family {
+    border-block-end: var(--border);
+  }
+
+  .family:first-of-type {
+    border-block-start: var(--border);
+  }
+
+  .family__summary,
+  .position__summary {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-sm);
+    padding-block: var(--space-sm);
+    cursor: pointer;
+  }
+
+  .family__label {
+    font-family: var(--font-serif);
+    font-size: var(--size-3);
+  }
+
+  .family__range,
+  .family__count,
+  .position__count {
+    font-family: var(--font-mono);
+  }
+
+  .family__count {
+    margin-inline-start: auto;
+  }
+
+  .family__body {
+    padding-inline-start: var(--space-md);
+    padding-block-end: var(--space-sm);
+  }
+
+  .position,
+  .position--inert {
+    display: block;
+    margin: 0;
+    border-block-start: var(--border);
+  }
+
+  .position--inert {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-sm);
+    padding-block: var(--space-xs);
+    color: var(--ink-muted);
+  }
+
+  .position__score {
+    display: inline-block;
+    min-width: 1.5rem;
+    font-family: var(--font-mono);
+    font-size: var(--size-2);
+  }
+
+  .position__offscale-label {
+    font-size: var(--size-2);
+  }
+
+  .position__aside,
+  .position__note {
+    margin: 0;
+    color: var(--ink-muted);
+    font-size: var(--size-1);
+  }
+
+  .position--offscale {
+    margin-block-start: var(--space-md);
+    border: var(--border);
+    border-radius: var(--radius-md);
+    padding-inline: var(--space-sm);
+  }
+
+  .position__aside {
+    padding-block-end: var(--space-xs);
+    max-width: var(--measure);
+  }
+
+  .contribution-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+    margin: 0;
+    padding: 0 0 var(--space-md);
+    list-style: none;
+  }
+
+  /* The composer, which lives inside a position group once it has been moved there. */
+  .compose {
+    padding-block-start: var(--space-sm);
+    border-block-start: var(--border);
+  }
+
+  /* A link-button and not a primary one. The prominent action at this moment is endorsing
+     something already written; this is the way out of that, not the page's recommendation. */
+  .compose__reveal {
+    font-size: var(--size-1);
+  }
+
+  .compose__form {
+    max-width: none;
+    margin-block-start: var(--space-xs);
+  }
+
+  /* The invitation after a position change. Same restraint as the note below it: bordered
+     rather than filled, and nothing that reads as the page pushing. */
+  .compose__invite {
+    max-width: var(--measure);
+    margin: 0 0 var(--space-2xs);
+    color: var(--ink-muted);
+    font-size: var(--size-1);
+  }
+
+  .compose__note {
+    max-width: var(--measure);
+    margin: 0 0 var(--space-sm);
+    padding: var(--space-xs) var(--space-sm);
+    border-inline-start: var(--border-width-thick) solid var(--rule);
+    color: var(--ink-muted);
+    font-size: var(--size-1);
+  }
+
+  .position__compose {
+    padding-block-end: var(--space-sm);
+  }
+
+  /* Everything from `.contribution` down lives in Contribution.astro, because a parent's
+     scoped-style attribute is not applied to a child component's root element and those
+     selectors would match nothing from here. */
+
+  @media (max-width: 42rem) {
+    .family__body {
+      padding-inline-start: var(--space-2xs);
+    }
+  }
+</style>

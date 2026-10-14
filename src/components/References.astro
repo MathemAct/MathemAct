@@ -1,0 +1,101 @@
+---
+/**
+ * What points here, and what this points at.
+ *
+ * "Referenced by" is the block that makes the corpus a corpus rather than a pile of pages:
+ * a report showing that three claims rest on it is a different object from the same
+ * report standing alone. It is also the only place on the site where a reader finds
+ * something they were not looking for, which for a research collection is most of the value.
+ *
+ * The outgoing list is here too, and that is a small addition to what was asked for. Without
+ * it a claim built out of two accounts says nothing about them on its own page, while
+ * both of them advertise it — the graph would be legible in one direction only, which for
+ * the page that did the citing is the wrong one.
+ *
+ * The excerpt is shown as stored, verbatim, and is deliberately not run through the markdown
+ * pipeline. It is a copy of somebody else's words made at a particular moment; setting its
+ * formulas would silently produce something that is no longer what was quoted, and a quote
+ * that has been reformatted is not evidence.
+ */
+import type { Reference } from '../lib/citations';
+
+interface Props {
+  incoming: readonly Reference[];
+  outgoing: readonly Reference[];
+}
+
+const { incoming, outgoing }: Props = Astro.props;
+
+const kind = (type: 'report' | 'claim') =>
+  type === 'report' ? 'Report' : 'Claim';
+---
+
+{
+  (incoming.length > 0 || outgoing.length > 0) && (
+    <section class="references" id="references">
+      {incoming.length > 0 && (
+        <div class="references__group">
+          <h2>Referenced by</h2>
+
+          <ul class="references__list" role="list">
+            {incoming.map((reference) => (
+              <li class="reference">
+                {reference.excerpt && (
+                  <blockquote class="reference__excerpt">
+                    <p>{reference.excerpt}</p>
+                  </blockquote>
+                )}
+
+                <p class="reference__source">
+                  <span class="reference__kind meta">{kind(reference.other.type)}</span>
+                  <a href={reference.other.href}>{reference.other.title}</a>
+                </p>
+
+                {reference.context && <p class="reference__context">{reference.context}</p>}
+
+                {reference.hereCommentId && (
+                  <p class="field__hint">
+                    The passage quoted is{' '}
+                    <a href={`#comment-${reference.hereCommentId}`}>in the discussion below</a>.
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {outgoing.length > 0 && (
+        <div class="references__group">
+          <h2>References</h2>
+
+          <ul class="references__list" role="list">
+            {outgoing.map((reference) => (
+              <li class="reference">
+                {reference.excerpt && (
+                  <blockquote class="reference__excerpt">
+                    <p>{reference.excerpt}</p>
+                  </blockquote>
+                )}
+
+                <p class="reference__source">
+                  <span class="reference__kind meta">{kind(reference.other.type)}</span>
+                  <a href={reference.other.href}>{reference.other.title}</a>
+                </p>
+
+                {reference.context && <p class="reference__context">{reference.context}</p>}
+
+                {reference.hereCommentId && (
+                  <p class="field__hint">
+                    Quoted{' '}
+                    <a href={`#comment-${reference.hereCommentId}`}>in the discussion below</a>.
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  )
+}

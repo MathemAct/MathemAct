@@ -1,0 +1,292 @@
+---
+/**
+ * Every claim, in one list.
+ *
+ * It used to be two — "active" and "proposed" — and the split was the page's argument: a
+ * claim became part of the record only once five people had answered it or a moderator had
+ * promoted it. That went with pre-moderation on 2026-08-18. A claim is part of the record
+ * when it is written, and the honest reading of the old split is that it dressed a
+ * moderation queue up as a statement about community uptake.
+ *
+ * Nothing is endorsed by being listed here, and the page still says so in the paragraph
+ * below, which is where that claim always belonged.
+ *
+ * **Cards show a shape as of 2026-08-22**, which reverses what this file used to say. The page
+ * rendered no aggregate at all — not even a count of raters — on the grounds that a figure on a
+ * card tells a reader where the community landed before they opened the question. It now carries
+ * a sparkline and one statistics line, because the alternative was a list of sentences a reader
+ * had no way to choose between. `ClaimCard.astro` holds the argument, the limits, and the note
+ * about how this pulls against the claim page's withholding.
+ *
+ * The mean is still on no card. The only filter is still area: an ordering is honest about being
+ * rough where a threshold on a self-reported 0-to-10 scale is not.
+ *
+ * The rail, the count, the sort and the chips are `src/components/Listing.astro`, shared
+ * with /reports/ and /network/, so the three behave identically down to the address bar.
+ */
+import Base from '../../layouts/Base.astro';
+import Listing from '../../components/Listing.astro';
+import '../../styles/corpus.css';
+import '../../styles/forms.css';
+import { exportedAt } from '../../lib/manifest';
+import { path } from '../../lib/paths';
+import { AREAS } from '../../lib/report-schema';
+import { CLAIM_DIMENSIONS, CLAIM_NOUN, CLAIM_SORTS, groupsFor } from '../../lib/listings';
+import ClaimCard from '../../components/ClaimCard.astro';
+import { listClaims, listClaimStats } from '../../lib/claims';
+import { claimCardAttrs } from '../../lib/claim-facets';
+
+const claims = await listClaims();
+
+/** Export-time statistics, by id. A claim absent from this map has no aggregates and is
+ *  ineligible for the two aggregate sorts — see `claimCardAttrs`, which writes the empty
+ *  string rather than a zero for exactly that case. */
+const stats = listClaimStats();
+
+/** Only the areas something is actually filed under. An area nothing uses is a dead end
+ *  with a zero beside it, and on a corpus this size most of them would be. */
+const usedAreas = new Set(claims.map((claim) => claim.area));
+
+/**
+ * Only the tags something is actually filed under, and only their labels.
+ *
+ * The same rule as the areas above and as the reports listing: a vocabulary of thirty-two
+ * categories over a corpus of four is thirty-one dead ends and one result. `groupsFor` drops any
+ * dimension whose option list comes back empty, so a corpus with no tagged claims renders no
+ * "Subject area" fieldset at all rather than an empty one.
+ */
+const usedTags = new Map<string, string>();
+for (const claim of claims) {
+  for (const tag of claim.tags) usedTags.set(tag.code, tag.label);
+}
+
+const groups = groupsFor(CLAIM_DIMENSIONS, {
+  area: AREAS.filter((choice) => usedAreas.has(choice.value)).map((choice) => ({
+    value: choice.value,
+    label: choice.label,
+  })),
+  tag: [...usedTags]
+    .sort(([, a], [, b]) => a.localeCompare(b))
+    .map(([value, label]) => ({ value, label })),
+});
+
+/** Code to label, for the engine's chips and for any value only a fresh card carries. */
+const tagLabels = Object.fromEntries(usedTags);
+---
+
+<Base
+  title="Opinions"
+  description="Claims about how AI tools should be used in mathematics, and where the community stands on each."
+>
+  <div
+    class="shell corpus"
+    data-corpus
+    data-exported-at={exportedAt() ?? ''}
+    data-tag-labels={JSON.stringify(tagLabels)}
+  >
+    <header class="corpus__header">
+      <h1>Opinions</h1>
+      <p class="corpus__lead">
+        Single claims that can be agreed with. Answer one and you are shown how everybody
+        else answered.
+      </p>
+    </header>
+
+    <div class="prose">
+      <p>
+        MathemAct takes no position on any of these. What it records is the shape of the
+        disagreement, and the distribution is the finding.
+      </p>
+    </div>
+
+    {/* Above the lists rather than below them, and outside the branch so it is here whether
+        anything has been suggested or not. It was previously at the foot of the page, past
+        two sections that will grow without limit — a control nobody scrolls to is a control
+        that is not there. */}
+    <p class="corpus__action">
+      <a class="button button--primary" href={path('/opinions/new/')}>Suggest a claim</a>
+    </p>
+
+    {/* Rendered whether or not the export had anything in it, so that a claim suggested
+        today is filtered like one from March. On an empty corpus that is every claim on
+        the page: the overlay creates the area fieldset it needs, and corpus.css hides a
+        rail with none yet and closes the grid up behind it. */}
+    <Listing groups={groups} sorts={CLAIM_SORTS} noun={CLAIM_NOUN} total={claims.length}>
+      <ul class="claim-list" role="list" data-results>
+        {claims.map((claim) => (
+          <li
+            class="claim-item"
+            data-claim
+            {...claimCardAttrs({
+              area: claim.area,
+              createdAt: claim.createdAt,
+              interactions:
+                (stats.get(claim.id)?.totalRaters ?? 0) +
+                (stats.get(claim.id)?.contributionCount ?? 0),
+              /* Only the two shares decide eligibility, so the whole stats object goes in and
+                 `claimCardAttrs` reads what it needs. */
+              shares: stats.get(claim.id) ?? null,
+              lastActivityAt: stats.get(claim.id)?.lastActivityAt ?? null,
+              tagCodes: claim.tags.map((tag) => tag.code),
+            })}
+          >
+            <ClaimCard claim={claim} stats={stats.get(claim.id)} />
+          </li>
+        ))}
+      </ul>
+
+      {claims.length === 0 && (
+        <div class="empty" data-empty-state>
+          <p class="empty__heading">No claims yet.</p>
+          <p>
+            The first ones will come from members who noticed an argument worth settling —
+            or worth showing is not settled.
+          </p>
+          {/* The button that used to be here is now above this box, where it also stands
+              for the populated page. */}
+        </div>
+      )}
+    </Listing>
+
+    {/* One suggested since the export. Links to /opinions/view/?id=<id>, the
+        client-rendered viewer, because /opinions/<id>/ is generated at build time
+        from the export and does not exist yet for rows newer than the last build. */}
+    {/* Every sort attribute starts empty and the overlay fills in what it knows. `data-divided`
+        and `data-consensus` stay empty because a claim this new has no aggregates — they are
+        an export-time product — and the engine reads an empty numeric attribute as "cannot be
+        sorted by this" and puts the card last. A literal `0` in either would be a reading: it
+        would rank a brand-new claim among the ones the community has been shown to agree
+        about. `data-interactions` is the exception and is genuinely `0`: nobody has answered a
+        claim posted an hour ago, and that is a fact rather than an absence. */}
+    {/* This mirrors `ClaimCard.astro` **minus the sparkline and the statistics line**, and the
+        omission is the design rather than an unfinished copy of it. Aggregates are an
+        export-time product; a claim posted an hour ago has none, and a zero histogram reads as
+        unanimous disagreement, which is the most wrong thing a card could say about a claim
+        nobody has answered.
+
+        The classes are duplicated here because a `<template>` cannot instantiate a component.
+        What is *not* duplicated is the attribute list — `claimCardAttrs()` writes those on both
+        paths, which is the half that would silently break a sort if it drifted. */}
+    <template data-fresh-claim>
+      <li class="claim-item" data-fresh data-claim data-area="" data-created="" data-interactions="0" data-divided="" data-consensus="" data-active="" data-tags="">
+        <div class="claim-card">
+          <a class="claim-card__statement" data-statement></a>
+          <p class="card__facts claim-card__facts">
+            {/* `data-area-label`, not `data-area`: the <li> above carries `data-area` for the
+                filter to read, and a querySelector for the same name inside it would be one
+                rename away from writing the filter's value into the visible text. */}
+            <span data-area-label></span>
+            <span class="meta" data-date></span>
+          </p>
+        </div>
+      </li>
+    </template>
+  </div>
+</Base>
+
+<script>
+  /**
+   * The listing, and at the bottom the freshness overlay.
+   *
+   * Filtering, sorting and the address bar are `createListing()` in
+   * src/lib/listing-filters.ts, the same engine /reports/ and /network/ run on. This page
+   * used to carry its own sort loop over `[data-claim-list]` and no filters at all.
+   *
+   * Nothing about ratings is touched. The aggregate is never built into a page, so there is
+   * no stale copy of one to refresh: a claim page fetches its distribution live, after the
+   * reader has answered, and this listing shows no aggregate at all by design.
+   */
+  import { claimsSince } from '../../lib/fresh';
+  import { longDate } from '../../lib/format';
+  import { createListing } from '../../lib/listing-filters';
+  import { CLAIM_DIMENSIONS, CLAIM_NOUN, CLAIM_SORTS } from '../../lib/listings';
+  import { applyCardAttrs, claimCardAttrs } from '../../lib/claim-facets';
+  import { areaLabel } from '../../lib/report-schema';
+
+  /** Emitted by the frontmatter, because a client script cannot read a build-time constant.
+   *  Parsed defensively: a malformed attribute should cost a chip its label, not the page. */
+  let tagLabels: Record<string, string> = {};
+  try {
+    tagLabels = JSON.parse(
+      document.querySelector<HTMLElement>('[data-corpus]')?.dataset.tagLabels || '{}',
+    );
+  } catch {
+    tagLabels = {};
+  }
+
+  const listing = createListing({
+    cards: [...document.querySelectorAll<HTMLElement>('[data-results] > [data-claim]')],
+    dimensions: CLAIM_DIMENSIONS,
+    sorts: CLAIM_SORTS,
+    noun: CLAIM_NOUN,
+    /* A value a fresh card carries that the build had no row to justify. Areas resolve
+       through the vocabulary; tags resolve through the labels the build emitted, and fall back
+       to the bare code — which is the right failure, because a code is still recognisable to
+       somebody who filters by one. */
+    injectLabel: (key, value) =>
+      key === 'area' ? areaLabel(value) : key === 'tag' ? (tagLabels[value] ?? value) : value,
+  });
+
+  // ── Freshness overlay ─────────────────────────────────────────────────────────────────
+  //
+  // Fails silently at every step; see src/lib/fresh.ts. The page is already correct without
+  // it.
+
+  void (async () => {
+    const since = document.querySelector<HTMLElement>('[data-corpus]')?.dataset.exportedAt;
+    const list = document.querySelector<HTMLElement>('[data-results]');
+    const template = document.querySelector<HTMLTemplateElement>('[data-fresh-claim]');
+
+    if (!since || !list || !template) return;
+
+    const fresh = await claimsSince(since);
+    if (fresh.length === 0) return;
+
+    const added: HTMLElement[] = [];
+
+    for (const claim of fresh) {
+      const node = (template.content.cloneNode(true) as DocumentFragment)
+        .firstElementChild as HTMLElement;
+
+      // The attributes the filter and the sorts read, written before the node is absorbed —
+      // and written by the same function that attributed every card the build wrote, so a
+      // fresh card and an exported one cannot carry different names or different formats.
+      //
+      // `shares: null` is the whole of the "ineligible" behaviour: aggregates are an
+      // export-time product, a claim this new has none, and `claimCardAttrs` turns that into
+      // the empty string the engine already sorts last. Nothing here invents a zero.
+      applyCardAttrs(
+        node,
+        claimCardAttrs({
+          area: claim.area,
+          createdAt: claim.createdAt,
+          interactions: 0,
+          shares: null,
+        }),
+      );
+
+      const statement = node.querySelector<HTMLAnchorElement>('[data-statement]');
+      if (statement) {
+        statement.textContent = claim.statement;
+        statement.href = `view/?id=${claim.id}`;
+      }
+
+      const area = node.querySelector<HTMLElement>('[data-area-label]');
+      if (area) area.textContent = areaLabel(claim.area);
+
+      const dateEl = node.querySelector<HTMLElement>('[data-date]');
+      if (dateEl) dateEl.textContent = `Posted ${longDate(claim.createdAt)}`;
+
+      added.push(node);
+    }
+
+    list.prepend(...added);
+
+    // Filtered, counted and sorted like everything else, and add() offers the area filter
+    // for a value no exported claim has — on an empty corpus, for every area there is.
+    listing?.add(added);
+
+    const empty = document.querySelector<HTMLElement>('[data-empty-state]');
+    if (empty) empty.hidden = true;
+  })();
+</script>

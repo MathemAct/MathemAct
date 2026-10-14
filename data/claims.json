@@ -1,0 +1,19 @@
+[
+  {
+    "id": "e5b0335c-06eb-47d0-a515-f8d080c021b7",
+    "statement": "AI is exceptional as a reading assistant.",
+    "rationale": "Sometimes people do not trust AI a priori. Reading papers is a good testing ground for the value of the models, as it is supposed to be easy to verify if the produced answers are correct.",
+    "status": "active",
+    "area": "learning",
+    "createdAt": "2026-08-17T10:30:51.526Z",
+    "activatedAt": "2026-08-18T10:11:31.152Z",
+    "tags": [],
+    "sourceUrl": null,
+    "sourceReportId": null,
+    "author": {
+      "id": "acef3dbd-202c-47fa-806a-3c32522f315e",
+      "displayName": "Anna Zanoli",
+      "isPseudonym": false
+    }
+  }
+]

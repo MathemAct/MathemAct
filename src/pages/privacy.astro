@@ -1,0 +1,266 @@
+---
+import Page from '../layouts/Page.astro';
+import { path } from '../lib/paths';
+import { SITE } from '../lib/site';
+---
+
+<Page
+  title="Privacy"
+  description="What MathemAct stores, who processes it, and how to have it erased."
+  lead="What is stored, who else sees it, and how to get rid of it. In plain terms, because a privacy notice nobody reads protects nobody."
+  updated="August 2026"
+>
+  <h2>Who is responsible</h2>
+
+  <p>
+    MathemAct is a personal project. The data controller is an individual
+    based in Italy, not an institution. Requests about personal data, rights under the GDPR,
+    and anything else covered here go to{' '}
+    <a href={`mailto:${SITE.contactEmail}`}>{SITE.contactEmail}</a>.
+  </p>
+
+  <h2>What is stored</h2>
+
+  <dl class="items">
+    <dt>Your email address</dt>
+    <dd>
+      Needed to confirm the account, to sign you in, and to reset a password. It is also
+      what your institutional badge is derived from. It is <strong>never displayed</strong>
+      on the site, never returned by the API, never included in the public export, and
+      never shown to moderators.
+      <p class="legal-basis">Legal basis: performance of the account contract (GDPR Article 6(1)(b)).</p>
+    </dd>
+
+    <dt>Your display name</dt>
+    <dd>
+      Shown on everything you post. It may be a pseudonym, at every verification tier.
+      <p class="legal-basis">Legal basis: performance of the account contract (Article 6(1)(b)).</p>
+    </dd>
+
+    <dt>Your institution, if the domain matched</dt>
+    <dd>
+      Derived automatically from your confirmed email domain against the Research
+      Organization Registry, along with the date of that check. Stored as the institution
+      name and country. You cannot set or edit this yourself.
+      <p class="legal-basis">Legal basis: performance of the account contract (Article 6(1)(b)).</p>
+    </dd>
+
+    <dt>What you post</dt>
+    <dd>
+      Reports, entries, comments, ratings, and confirmations that a report still
+      reproduces, with the date
+      each was made. Ratings are stored per person so that you can change yours; individual
+      ratings are never shown attributed to a name.
+      <p class="legal-basis">Legal basis: performance of the account contract (Article 6(1)(b)).</p>
+    </dd>
+
+    <dt>Your activity record</dt>
+    <dd>
+      A list of what you did here — posted, rated, flagged, commented — and of what
+      happened to it afterwards: a moderator's decision, somebody's comment, somebody's
+      rating. You can read it under <a href={path('/account/activity/')}>your activity</a>,
+      and nobody else can, including moderators. It records the event and the date, never
+      an email address and never anything a moderator wrote to another moderator. It is
+      deleted outright when your account is erased, along with the note of when you last
+      looked at it.
+      <p class="legal-basis">Legal basis: performance of the account contract (Article 6(1)(b)).</p>
+    </dd>
+
+    <dt>Moderation decisions about you</dt>
+    <dd>
+      When a moderator decides whether something stays up, the reason they wrote is stored
+      and shown to two people: whoever posted the content, and whoever flagged it. You can
+      read the ones addressed to you under
+      <a href={path('/account/#decisions')}>moderation decisions</a>. They never name the
+      moderator, and — where the content is yours — they never say who flagged it. They are
+      deleted outright when your account is erased; the record that a decision was taken
+      stays in the moderators' own log, without your content attached to it.
+      <p class="legal-basis">Legal basis: legitimate interests in running a moderated site (Article 6(1)(f)), and performance of the account contract (Article 6(1)(b)).</p>
+    </dd>
+
+    <dt>An erasure request, if you make one</dt>
+    <dd>
+      The fact that your account has asked to be erased, when it was asked, and anything
+      you chose to add. Only you and an administrator can see it, and withdrawing the
+      request deletes the record of it outright.
+      <p class="legal-basis">Legal basis: compliance with the right to erasure under GDPR Article 17.</p>
+    </dd>
+  </dl>
+
+  <h3>What is not stored</h3>
+
+  <p>
+    There is no analytics of any kind, no advertising, no tracking pixels, and no
+    fingerprinting. Nothing about your visit is recorded while you read: the pages are
+    static files, and the database is contacted only when you sign in or post something.
+    Fonts are served from this site rather than from anyone else's font service.
+  </p>
+
+  <p>
+    Exactly one script is loaded from another company, on exactly four pages: Cloudflare's
+    Turnstile check, where you sign up, sign in, reset a password, or ask for another
+    confirmation link. It is not on any page you only read, and you can confirm that by
+    viewing source.
+  </p>
+  <p class="legal-basis">Legal basis: prevention of automated abuse — legitimate interests (GDPR Article 6(1)(f)).</p>
+
+  <p>
+    There is no cookie banner because there are no persistent cookies. Being signed in is
+    kept in this browser's own local storage, written when you sign in and removed when you
+    sign out. Two small numbers sit beside it for the same reason — whether this account
+    moderates, and how many notifications were waiting last time a page asked — so that the
+    header can be drawn without every page you read contacting the database. Both are
+    cleared when you sign out, and neither leaves the browser.
+  </p>
+
+  <h2>Retention</h2>
+
+  <p>
+    Account data — your email address, display name, and institutional record — is held for
+    as long as your account exists. On erasure it is deleted within a reasonable time,
+    typically the same day. Content you posted is detached from your account on erasure (see
+    below) and is retained as part of the corpus, which is its purpose.
+  </p>
+
+  <p>
+    Brevo retains logs of the emails it sent on your behalf for as long as the account is
+    active. Cloudflare's Turnstile privacy addendum does not state a specific retention
+    period for the signals it processes during bot checks. GitHub retains server logs
+    according to its own privacy statement.
+  </p>
+
+  <h2>Who processes it</h2>
+
+  <p>Four services are involved. Each receives only what it needs to do its job.</p>
+
+  <dl class="items">
+    <dt>Supabase</dt>
+    <dd>
+      Database and authentication, hosted in the European Union on AWS infrastructure.
+      Holds everything listed above. This is the only processor that sees the whole picture.
+      Supabase operates under a DPA incorporating Standard Contractual Clauses for any
+      transfers outside the EU. Supabase's sub-processor list is published at{' '}
+      <a href="https://supabase.com/legal/customer-resources/subprocessor-list">supabase.com/legal</a>.
+    </dd>
+
+    <dt>Brevo</dt>
+    <dd>
+      Sends the confirmation and password-reset emails, and therefore receives your email
+      address and the contents of those messages. Nothing else. It is never used to send
+      announcements. Brevo is a French company and stores data within the EU.
+    </dd>
+
+    <dt>Cloudflare</dt>
+    <dd>
+      Provides the Turnstile check that keeps automated signups out. It receives your IP
+      address, TLS fingerprint, and browser user agent when you sign up, sign in, ask for
+      a password reset, or ask for another confirmation link. Its script is loaded on those
+      four pages and nowhere else, so it is never involved in a page you only read. The
+      Turnstile privacy addendum requires that it be referenced here:{' '}
+      <a href="https://www.cloudflare.com/turnstile-privacy-policy/">cloudflare.com/turnstile-privacy-policy</a>.
+    </dd>
+
+    <dt>GitHub</dt>
+    <dd>
+      Serves the site's static files. GitHub records your IP address as part of any
+      ordinary web request. No account is required to read this site. See GitHub's{' '}
+      <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">privacy statement</a>.
+    </dd>
+  </dl>
+
+  <h2>What is public</h2>
+
+  <p>
+    Everything you post is public, and is published under a{' '}
+    <a href="https://creativecommons.org/licenses/by/4.0/" rel="license">CC BY 4.0</a>{' '}
+    licence. It is also included in a{' '}
+    <a href={`${SITE.repository}/tree/main/data`}>nightly export</a> that anyone can download
+    in full, as JSON and as CSV. Assume that anything you post can be copied, archived,
+    quoted, and analysed by people you did not anticipate, because it can. Your email address
+    is not in the export — there is no field in it that could hold one.
+  </p>
+
+  <p>
+    Take particular care with transcript excerpts. Remove anyone else's unpublished
+    material before you paste, and remember that a transcript may contain more identifying
+    detail than you noticed when you were in the conversation.
+  </p>
+
+  <h2>Erasing your account</h2>
+
+  <p>
+    Ask on the <a href={path('/account/delete/')}>erasure page</a> while signed in, and it
+    will be done. Your profile, email address, and institutional record are deleted
+    outright. Asking from within the account means nobody has to prove who they are by
+    email, and it means the request cannot be made by someone else on your behalf. If you
+    cannot sign in, write to <a href={`mailto:${SITE.contactEmail}`}>{SITE.contactEmail}</a
+    > from the address the account uses.
+  </p>
+
+  <p>
+    Content you posted is detached from you rather than deleted with you: the body of a
+    report or comment is removed and the author attribution is stripped, but the thread
+    structure stays, so that the discussion around it does not collapse into
+    incomprehensibility. If you want specific posts deleted as well, say so and they will
+    be. Anything already downloaded by someone else from a previous export cannot be
+    recalled, and neither can a copy of that export already in the site's public history,
+    which is true of anything published anywhere.
+  </p>
+
+  <h2>Your rights</h2>
+
+  <p>
+    Under the GDPR you have the right to: access your personal data; have it corrected; have
+    it erased; restrict how it is processed; receive a portable copy; and object to
+    processing based on legitimate interests. Write to{' '}
+    <a href={`mailto:${SITE.contactEmail}`}>{SITE.contactEmail}</a> and a response will follow
+    within one month. If a request is refused you will be told why.
+  </p>
+
+  <p>
+    If you believe your data has been handled unlawfully, you have the right to complain to
+    the supervisory authority for Italy:{' '}
+    <strong>Garante per la protezione dei dati personali</strong>,{' '}
+    Piazza Venezia 11, 00187 Roma, Italy.{' '}
+    <a href="https://www.garanteprivacy.it">garanteprivacy.it</a>
+  </p>
+
+  <h2>Changes</h2>
+
+  <p>
+    If this notice changes in a way that affects what is collected or who sees it,
+    registered users will be told before it takes effect, not after. The date at the top
+    is the date of the last change, and the full history is in the{' '}
+    <a href={SITE.repository}>public repository</a>.
+  </p>
+
+  <p>
+    Questions about any of this, including the awkward ones, go to{' '}
+    <a href={`mailto:${SITE.contactEmail}`}>{SITE.contactEmail}</a>. The{' '}
+    <a href={path('/about/')}>about page</a> explains how verification works in more detail.
+  </p>
+</Page>
+
+<style>
+  .items {
+    margin: 0;
+  }
+
+  .items dt {
+    margin-block-start: var(--space-md);
+    font-weight: var(--weight-semibold);
+  }
+
+  .items dd {
+    margin-block-start: var(--space-3xs);
+    margin-inline-start: 0;
+  }
+
+  .legal-basis {
+    margin-block-start: var(--space-3xs);
+    margin-block-end: 0;
+    color: var(--ink-muted);
+    font-size: var(--size-2);
+    font-style: italic;
+  }
+</style>

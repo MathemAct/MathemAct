@@ -1,0 +1,263 @@
+---
+/**
+ * Edit a report, while it is still yours to edit.
+ *
+ * Two states reach this page and they read differently, which is why the explanation panel
+ * is conditional rather than always present:
+ *
+ *   * **It was hidden after a flag.** The moderator's sentence is at the top, and saving is
+ *     how it gets answered. Saving does not republish, and cannot: `status` is reverted by
+ *     the guard trigger and no policy would let an author set it. It stays hidden until a
+ *     moderator unhides it, because a save that republished would be self-approval with
+ *     extra steps.
+ *   * **Nobody has answered it yet.** A report is published the moment it is written, so
+ *     without this there would be no way to fix a typo at all. The window closes the first
+ *     time somebody confirms it still works or comments on it — their answer attests to a
+ *     version, and rewriting it afterwards would leave them pointing at text nobody can
+ *     read.
+ *
+ * The page is reached from "Your submissions" on /account/. It pre-fills every field from
+ * the existing report and on submit calls resubmit_report — an RPC that replaces all
+ * content, tools, and tags in one transaction (necessary because the deferred
+ * at-least-one-tool constraint would fire between a DELETE and a subsequent INSERT if they
+ * were separate PostgREST requests). The database decides whether a save is allowed; this
+ * page decides only what to show.
+ *
+ * The fields are `ReportFields.astro` and their behaviour is `src/lib/report-form.ts`, both
+ * shared with /reports/new/. They were copied between the two pages until schema version 2,
+ * and the conditional scales are what made that untenable: a scale shown on one page and not
+ * the other stores a number against a question the author never saw.
+ *
+ * Deliberately no draft system. The submission already exists in the database — editing and
+ * resending is one deliberate action, not something that should accumulate in localStorage
+ * and produce a "a draft from three weeks ago has been restored" banner on the next login.
+ */
+import Account from '../../layouts/Account.astro';
+import FormStatus from '../../components/FormStatus.astro';
+import ReportFields from '../../components/ReportFields.astro';
+import { path } from '../../lib/paths';
+import { LICENCE } from '../../lib/site';
+---
+
+<Account
+  title="Edit your submission"
+  description="Correct a report you posted, or answer the reason it was hidden."
+  lead="Make the changes and save. A report stays editable until somebody else has answered it — and a hidden one stays editable, and hidden, until a moderator has looked again."
+  gate="required"
+>
+  <div data-loading>
+    <p class="field__hint">Loading your submission&hellip;</p>
+  </div>
+
+  <div class="panel" data-error hidden>
+    <p class="panel__heading" data-error-heading>Could not load submission</p>
+    <p data-error-body></p>
+    <p class="actions">
+      <a class="button button--secondary" href={path('/account/')}>Back to your account</a>
+    </p>
+  </div>
+
+  <div data-form-wrapper hidden>
+    {/* The explanation — the reason the author is here. It is read from
+        public.moderation_notices rather than from the report, because a decision is about a
+        person and is stored addressed to one. Shown when present: an older report hidden
+        before notices existed has none, and a missing sentence must not hide the form. */}
+    <div class="mod-note" data-note-panel hidden>
+      <p class="mod-note__head">Why it was hidden</p>
+      <p class="mod-note__body" data-moderation-note></p>
+    </div>
+
+    <form class="report-form" id="report-edit" novalidate>
+      <FormStatus id="edit-status" />
+
+      <ReportFields />
+
+      <div class="draft">
+        <button class="button button--primary" type="submit">Save changes</button>
+        <a class="button button--quiet" href={path('/account/')}>Cancel</a>
+      </div>
+
+      <p class="field__hint">
+        Saving replaces the report. A hidden one stays hidden until a moderator looks again.
+        Everything published here is licensed
+        <a href={LICENCE.url} rel="license">{LICENCE.name}</a>; you keep copyright and are credited.
+      </p>
+    </form>
+  </div>
+</Account>
+
+<script>
+  import { loadEditableReport, resubmitReport } from '../../lib/reports';
+  import { ReportForm } from '../../lib/report-form';
+  import { loadNotices } from '../../lib/notices';
+  import { startSession, subscribeToSession } from '../../lib/session';
+  import {
+    clearFieldErrors,
+    hideStatus,
+    query,
+    setBusy,
+    showStatus,
+  } from '../../lib/forms';
+
+  const loading = query<HTMLElement>('[data-loading]');
+  const errorPanel = query<HTMLElement>('[data-error]');
+  const errorHeading = query<HTMLElement>('[data-error-heading]');
+  const errorBody = query<HTMLElement>('[data-error-body]');
+  const wrapper = query<HTMLElement>('[data-form-wrapper]');
+
+  const form = query<HTMLFormElement>('#report-edit');
+  const status = query<HTMLElement>('#edit-status');
+  const submit = query<HTMLButtonElement>('button[type="submit"]', form);
+
+  const fields = new ReportForm(form, () => fields.sync());
+
+  let userId: string | null = null;
+
+  // ── Identify the report from the URL ────────────────────────────────────────────────
+
+  const reportId = new URLSearchParams(window.location.search).get('id');
+
+  subscribeToSession((state) => {
+    if (state.status !== 'signed-in') return;
+    if (userId === state.userId) return;
+
+    userId = state.userId;
+    void openForm(state.userId);
+  });
+
+  void startSession();
+
+  async function openForm(id: string): Promise<void> {
+    if (!reportId) {
+      showError('No submission ID in the URL. Go back to your account and try the link again.');
+      return;
+    }
+
+    const result = await loadEditableReport(reportId, id);
+
+    loading.hidden = true;
+
+    if (!result.ok) {
+      showError(result.message);
+      return;
+    }
+
+    // The reason, from the decision addressed to this author. Newest first out of the query,
+    // so the first match is the one that still applies. Loaded after the report rather than
+    // beside it: if this fails the form still opens, and a form that opens without the
+    // sentence is better than a sentence with no form.
+    void loadNotices().then((notices) => {
+      if (!notices.ok) return;
+
+      const notice = notices.value.find(
+        (row) =>
+          row.subjectId === reportId && row.role === 'author' && row.outcome === 'hidden',
+      );
+
+      if (!notice) return;
+
+      query<HTMLElement>('[data-note-panel]').hidden = false;
+      query<HTMLElement>('[data-moderation-note]').textContent = notice.explanation;
+    });
+
+    fields.prefill(result.value);
+    void fields.fillTags();
+    fields.sync();
+
+    wrapper.hidden = false;
+  }
+
+  function showError(message: string): void {
+    loading.hidden = true;
+    errorHeading.textContent = 'Could not load this submission';
+    errorBody.textContent = message;
+    errorPanel.hidden = false;
+  }
+
+  // ── Keeping the counters and the conditionals current ───────────────────────────────
+
+  form.addEventListener('input', () => fields.sync());
+  form.addEventListener('change', () => fields.sync());
+
+  // ── Submission ──────────────────────────────────────────────────────────────────────
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    clearFieldErrors(form);
+    hideStatus(status);
+
+    if (!userId || !reportId) {
+      showStatus(status, 'error', 'Your session has ended. Sign in again.');
+      return;
+    }
+
+    const firstBad = fields.validate();
+    const toolProblem = fields.toolCountMessage();
+
+    if (toolProblem) {
+      showStatus(status, 'error', toolProblem);
+      document.querySelector('#section-tools')?.scrollIntoView({ block: 'start' });
+      return;
+    }
+
+    if (firstBad) {
+      const target =
+        document.querySelector<HTMLElement>(`#${CSS.escape(firstBad)}`) ??
+        document.querySelector<HTMLElement>('#section-tools');
+
+      showStatus(status, 'error', 'Some sections still need an answer. They are marked below.');
+      target?.scrollIntoView({ block: 'center' });
+      if (!firstBad.startsWith('section-')) {
+        form.querySelector<HTMLElement>(`#${CSS.escape(firstBad)}`)?.focus();
+      }
+      return;
+    }
+
+    setBusy(submit, true, 'Saving…');
+    const result = await resubmitReport(reportId, fields.read());
+    setBusy(submit, false);
+
+    if (!result.ok) {
+      showStatus(status, 'error', result.message);
+      return;
+    }
+
+    // Said here rather than by sending them to /account/ with nothing said, which read as the
+    // save having vanished. The site rebuilds within minutes of a write, so that is when the
+    // report's own page catches up. Not a link to it: this page cannot tell a published report
+    // from a hidden one, and a hidden one has no public page to link to.
+    showStatus(
+      status,
+      'success',
+      'Saved. On a published report, readers see the new text within a few minutes; a hidden one stays hidden until a moderator looks again.',
+    );
+    status.scrollIntoView({ block: 'center' });
+  });
+</script>
+
+<style>
+  .mod-note {
+    margin-block-end: var(--space-xl);
+    padding: var(--space-sm) var(--space-md);
+    border-inline-start: var(--border-width-thick) solid var(--accent);
+    background-color: var(--surface);
+  }
+
+  .mod-note__head {
+    font-size: var(--size-1);
+    font-weight: var(--weight-semibold);
+    margin-block-end: var(--space-2xs);
+  }
+
+  .mod-note__body {
+    line-height: var(--leading-relaxed);
+  }
+
+  .draft {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-sm);
+    margin-block-start: var(--space-xl);
+  }
+</style>

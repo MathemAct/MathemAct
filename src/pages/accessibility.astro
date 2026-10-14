@@ -1,0 +1,175 @@
+---
+import Page from '../layouts/Page.astro';
+import { SITE } from '../lib/site';
+---
+
+<Page
+  title="Accessibility"
+  description="MathemAct's accessibility statement: what we aim for, what is known not to work, and how to report a problem."
+  lead="This site aims to meet WCAG 2.1 Level AA. Where it falls short, say so."
+  updated="August 2026"
+>
+  <h2>What we aim for</h2>
+
+  <p>
+    MathemAct is built to the{' '}
+    <a href="https://www.w3.org/TR/WCAG21/">Web Content Accessibility Guidelines 2.1</a>{' '}
+    Level AA. The relevant targets:
+  </p>
+
+  <ul>
+    <li>
+      Every form control has a label bound to it. That includes the rows you add
+      yourself — a tool, a supporting link — where the label is bound to the new field as
+      the row is created, not left to a placeholder.
+    </li>
+    <li>
+      <strong>Skip to content</strong> is the first thing the keyboard reaches on every
+      page, and it becomes visible when it is focused.
+    </li>
+    <li>
+      Keyboard focus is a 2px near-black ring, held off the control by 2px so it reads as
+      a ring rather than a thicker border. It is deliberately not the red accent: the
+      primary button is filled red, and a red ring around it would be a slightly larger
+      button rather than an indicator. The offset is doing contrast work too — against the
+      page the ring is 16:1, but drawn tight against a red button it would be 2.6:1.
+    </li>
+    <li>
+      Colour is never the sole carrier of meaning. Outcome states (worked, partially
+      worked, did not work) are a square <em>and</em> the words; the square carries the
+      colour and the label stays in near-black.
+    </li>
+    <li>
+      The histogram on a claim is not given an alt text. The bars are hidden from
+      assistive technology and the same figures are published beside them as a real table
+      with a caption, because a chart carries its content through height and position and
+      a label reading &ldquo;histogram of ratings&rdquo; tells you nothing you can act on.
+    </li>
+    <li>
+      Text contrast is well clear of the 4.5:1 minimum: body text is 16:1 on the page
+      background, links 6.2:1, secondary and metadata text 8.4:1. Input borders are 8.4:1
+      rather than the hairline used for decorative rules.
+    </li>
+    <li>
+      Every size is set in <code>rem</code>, so browser zoom and a larger default text
+      size both scale the whole page rather than breaking it.
+    </li>
+    <li>
+      The site respects <code>prefers-reduced-motion</code>. There is one animation on the
+      whole site — a short reveal when a question appears on the report form — and it is
+      removed outright under that setting, along with every transition and smooth scroll.
+    </li>
+    <li>Page structure uses semantic landmarks: <code>header</code>, <code>main</code>,
+      <code>footer</code>, and <code>nav</code>.</li>
+    <li>The reading order in the HTML matches the visual order. No stylesheet on the site
+      reorders content visually.</li>
+    <li>
+      Things that change without a page load — a form's result, the count on the search
+      page, a question appearing — are announced, not just drawn.
+    </li>
+    <li>
+      Mathematical content is rendered with KaTeX, which emits MathML for assistive
+      technology alongside the visual output, and marks the visual copy
+      <code>aria-hidden</code> so a formula is not read twice.
+    </li>
+  </ul>
+
+  <h2>Type and legibility</h2>
+
+  <p>
+    WCAG places no requirement on typeface choice, so nothing in this section is a
+    conformance claim. It is here because the type is the first thing you meet on a page,
+    and the choices behind it are checkable.
+  </p>
+
+  <p>
+    The site is set in <a href="https://www.ibm.com/plex/">IBM Plex</a> — Serif for
+    headings, Sans for body text, Mono for anything a machine could parse, such as model
+    names, versions, dates and scores. It is an open-licence family designed for interface
+    text, and it earns its place here rather than being decorative:
+  </p>
+
+  <ul>
+    <li>
+      <strong>The characters that get confused are drawn apart.</strong> Capital
+      <code>I</code> carries top and bottom crossbars, lowercase <code>l</code> a tail to
+      the right, and the digit <code>1</code> a flag and a full foot — so
+      <code>Il1</code> reads as three different characters in all three families. In Mono,
+      the zero is dotted. That matters most exactly where it appears: a version string is
+      unambiguous at 13px.
+    </li>
+    <li>
+      <strong>The x-height is 74% of the cap height</strong>, which is generous, and is
+      what keeps the smallest metadata readable rather than merely small.
+    </li>
+    <li>
+      <strong>Body text is 17px at a line height of 1.6</strong>, and long prose 1.7. Every
+      size is set in <code>rem</code> and nothing is pinned to a pixel, so browser zoom
+      and a larger default text size set in the operating system both work.
+    </li>
+    <li>
+      <strong>Accented characters come from the same faces as the rest of the text.</strong>
+      Erdős, Ważewski and Lindelöf are set in Plex throughout, and do not fall back to a
+      different typeface partway through a name.
+    </li>
+    <li>
+      <strong>Nothing depends on a font arriving.</strong> The files are self-hosted and
+      declared <code>font-display: swap</code>, so text is readable in a system face
+      immediately; each family has a full fallback stack behind it.
+    </li>
+    <li>
+      <strong>No text is delivered as an image.</strong> The one diagram, on the home page,
+      is marked <code>role="img"</code> and announces a title and a description.
+    </li>
+  </ul>
+
+  <h2>Known limitations</h2>
+
+  <ul>
+    <li>
+      In Plex Sans and Plex Serif, <code>0</code> and <code>O</code> differ only in width.
+      Only Mono dots its zero, which is why anything meant to be read character by
+      character is set in Mono — but a stray identifier in ordinary prose is ambiguous.
+    </li>
+    <li>
+      The handwritten labels on the home page diagram are set in Kalam, which distinguishes
+      almost nothing: <code>I</code>, <code>l</code> and <code>1</code> are near-identical
+      strokes. It is confined to that one drawing and appears in no prose anywhere on the
+      site, and the diagram's description carries the same content in text.
+    </li>
+    <li>
+      Nothing above is checked automatically. The build gates the database and the
+      typography, not this page, so every claim here was verified by hand on a particular
+      day and could regress without anything going red. If you find one that is no longer
+      true, that is worth reporting as much as a bug.
+    </li>
+    <li>
+      The moderation screen — only visible to logged-in moderators — has not been tested
+      with a screen reader.
+    </li>
+    <li>
+      Complex TeX expressions in reports may not be fully navigable with older screen
+      readers that do not support MathML.
+    </li>
+  </ul>
+
+  <h2>Reporting a problem</h2>
+
+  <p>
+    If you find something that stops you using this site, write to{' '}
+    <a href={`mailto:${SITE.contactEmail}`}>{SITE.contactEmail}</a>. Describe what you were
+    trying to do, what happened, and what browser and assistive technology you were using.
+    This is a personal project with no dedicated accessibility resource, but reports are
+    taken seriously and fixes are prioritised over new features.
+  </p>
+
+  <h2>Enforcement</h2>
+
+  <p>
+    This statement covers the MathemAct website at{' '}
+    <a href="https://mathemact.github.io/MathemAct/">mathemact.github.io/MathemAct</a>.
+    MathemAct is an independent personal project and is not subject to the EU Web
+    Accessibility Directive, which applies to public sector bodies. This statement is
+    published voluntarily.
+  </p>
+</Page>

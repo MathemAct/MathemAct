@@ -1,0 +1,30 @@
+[
+  {
+    "claimId": "e5b0335c-06eb-47d0-a515-f8d080c021b7",
+    "histogram": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      2
+    ],
+    "median": 10,
+    "mean": 10,
+    "totalRaters": 2,
+    "opinionCount": 2,
+    "noOpinionCount": 0,
+    "coverage": 1,
+    "contributionCount": 2,
+    "positionChanges": 1,
+    "lastActivityAt": "2026-10-11T19:23:26.327Z",
+    "divided": null,
+    "consensus": null,
+    "sortableMinimum": 10
+  }
+]

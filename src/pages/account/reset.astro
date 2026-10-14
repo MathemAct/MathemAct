@@ -1,0 +1,100 @@
+---
+/**
+ * Asking for a password reset link.
+ *
+ * The confirmation message is the same whether or not the address has an account, for the
+ * same reason the sign-in errors are: this form must not become a way of finding out who
+ * has registered. That means the honest wording is "if this address has an account, a link
+ * is on its way" rather than "check your email", which quietly asserts something we are
+ * refusing to tell you.
+ */
+import Account from '../../layouts/Account.astro';
+import Field from '../../components/Field.astro';
+import FormStatus from '../../components/FormStatus.astro';
+import Turnstile from '../../components/Turnstile.astro';
+import { path } from '../../lib/paths';
+import { SITE } from '../../lib/site';
+---
+
+<Account
+  title="Reset your password"
+  description="Ask for a link that lets you set a new password."
+  lead="Enter the address on the account. A link to set a new password will be sent to it."
+  gate="anonymous"
+>
+  <form class="form" id="reset" novalidate>
+    <FormStatus id="reset-status" />
+
+    <Field
+      id="email"
+      label="Email address"
+      type="email"
+      required
+      autocomplete="email"
+      maxlength={254}
+      hint={`The link arrives from ${SITE.senderEmail}, and is valid for 24 hours. Check the spam folder if nothing appears.`}
+    />
+
+    <Turnstile id="reset-turnstile" />
+
+    <div class="actions">
+      <button class="button button--primary" type="submit">Send reset link</button>
+      <a href={path('/account/sign-in/')}>Back to signing in</a>
+    </div>
+  </form>
+</Account>
+
+<script>
+  import { requestPasswordReset } from '../../lib/auth';
+  import { mountTurnstile } from '../../lib/turnstile';
+  import {
+    clearFieldErrors,
+    hideStatus,
+    query,
+    setBusy,
+    showStatus,
+    validateFields,
+  } from '../../lib/forms';
+  import { validateEmail } from '../../lib/validation';
+
+  const form = query<HTMLFormElement>('#reset');
+  const status = query<HTMLElement>('#reset-status');
+  const submit = query<HTMLButtonElement>('button[type="submit"]', form);
+  const email = query<HTMLInputElement>('#email', form);
+
+  const turnstile = mountTurnstile(query<HTMLElement>('#reset-turnstile', form));
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    clearFieldErrors(form);
+    hideStatus(status);
+
+    if (!validateFields([{ id: 'email', error: validateEmail(email.value) }], form)) return;
+
+    setBusy(submit, true, 'Sending…');
+
+    const widget = await turnstile;
+    const result = await requestPasswordReset(email.value, await widget.token());
+
+    setBusy(submit, false);
+
+    if (!result.ok) {
+      widget.reset();
+      showStatus(status, 'error', result.message);
+      return;
+    }
+
+    // Phrased as a conditional on purpose. Supabase returns success either way so that
+    // this form cannot be used to test whether an address is registered, and the wording
+    // has to match that or it undoes it.
+    showStatus(status, 'success', [
+      'If that address has an account, a link to set a new password is on its way to it.',
+      'The link is valid for 24 hours and can only be used once. Your current password still works until you set a new one.',
+    ]);
+
+    // The address stays in the field, so a mistyped one is visible and correctable rather
+    // than lost behind a success message.
+    submit.disabled = true;
+    submit.textContent = 'Sent';
+  });
+</script>

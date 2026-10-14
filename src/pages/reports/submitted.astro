@@ -1,0 +1,85 @@
+---
+/**
+ * Where a submission lands.
+ *
+ * Somebody has just spent ten minutes writing carefully, pressed a button, and watched
+ * everything they wrote disappear from the screen. The job of this page is to make that
+ * feel like an arrival rather than a loss: say what happened, say what happens next, say
+ * when, and say what to do if they want to change something.
+ *
+ * What happened changed on 2026-08-18: it is published. This page used to be about a wait
+ * — "expect a few days, not minutes" — and the wait is gone. The temptation now is to skip
+ * the page and drop somebody straight onto their report, which would be wrong for the same
+ * reason it was wrong before: the two things they most need to know are that the text is
+ * now fixed, and that the most useful thing they could do next is post a failure.
+ */
+import Account from '../../layouts/Account.astro';
+import { path } from '../../lib/paths';
+import { LICENCE } from '../../lib/site';
+---
+
+<Account
+  title="Published"
+  description="What happens to a report once it is posted."
+  lead="It is in the corpus. Nothing else is needed from you."
+  gate="required"
+>
+  <div class="prose">
+    <h2>What happens next</h2>
+
+    <ul class="tombstone-list">
+      <li>
+        It is readable now. Nobody approves a report before it appears.
+      </li>
+      <li>
+        It will appear in the listings within a minute, and on its own page within a few
+        minutes. Both show an open tombstone until somebody rechecks it and finds what you
+        found.
+      </li>
+      <li>
+        If a reader thinks something is wrong with it, they can flag it. A moderator then
+        decides whether it stays up, and writes you the reason either way. You will find
+        that under <a href={path('/account/#decisions')}>moderation decisions</a>.
+      </li>
+      <li>
+        Published accounts are licensed <a href={LICENCE.url} rel="license">{LICENCE.name}</a>.
+        You keep copyright and are credited under whatever name your profile shows.
+      </li>
+    </ul>
+
+    <h2>If you want to change it</h2>
+
+    <p>
+      The text is fixed. To correct something, post a comment on your own
+      report.
+    </p>
+
+    <p>
+      Deleting your own report is always possible, at any time, from its page. If something
+      more serious is wrong — third-party material you meant to remove, above all — flag it
+      yourself and say so. A moderator can hide it, and a hidden report is editable by its
+      author.
+    </p>
+
+  </div>
+
+  <div class="actions">
+    {/* Revealed by the script below when the form passed the new report's id. The view page
+        renders it straight away and hands over to the built page once that exists. */}
+    <a class="button" href={path('/reports/view/')} data-report-link hidden>Read your report</a>
+    <a class="button button--primary" href={path('/reports/new/')}>Post another</a>
+    <a class="button" href={path('/account/')}>Back to your profile</a>
+  </div>
+</Account>
+
+<script>
+  import { path } from '../../lib/paths';
+
+  const id = new URLSearchParams(window.location.search).get('id');
+  const link = document.querySelector<HTMLAnchorElement>('[data-report-link]');
+
+  if (id && link) {
+    link.href = `${path('/reports/view/')}?id=${encodeURIComponent(id)}`;
+    link.hidden = false;
+  }
+</script>

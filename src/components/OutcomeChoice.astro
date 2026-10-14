@@ -1,0 +1,139 @@
+---
+/**
+ * The three outcomes, given identical weight.
+ *
+ * This is the component where the project's position on failure is either honoured or
+ * quietly abandoned. A corpus of only successes is worthless and reads as advertising, and
+ * the failure modes are precisely what nobody publishes — so the interface must not make
+ * "it did not work" feel like the answer you give when you have nothing better.
+ *
+ * Concretely, and these are constraints on any future change:
+ *
+ *   Same size, same border, same padding, same type for all three. No option is smaller,
+ *   quieter, or visually last.
+ *   The tombstone carries the outcome colour and nothing else does. The labels stay in ink
+ *   because colour must never be the only thing saying what an option is — not for a
+ *   contrast reason. --outcome-partial is 4.63:1 on the ground and clears the text floor;
+ *   the 4.4:1 this line used to cite was wrong. See the note in tokens.css.
+ *   Every square is open, because a report nobody has confirmed is unverified whatever
+ *   its outcome. Filling the "worked" square would be a claim the submission cannot make.
+ *   The line underneath says the thing outright. Layout can imply a ranking no matter how
+ *   carefully it is balanced; a sentence cannot be misread as easily.
+ */
+import Tombstone from './Tombstone.astro';
+import { OUTCOME_CHOICES } from '../lib/report-schema';
+
+interface Props {
+  name: string;
+}
+
+const { name } = Astro.props;
+---
+
+<fieldset class="outcome">
+  <legend class="visually-hidden">What happened</legend>
+
+  <div class="outcome__options">
+    {
+      OUTCOME_CHOICES.map((choice) => (
+        <label class="outcome__option" for={`${name}-${choice.value}`}>
+          <input
+            class="outcome__input"
+            type="radio"
+            id={`${name}-${choice.value}`}
+            name={name}
+            value={choice.value}
+          />
+          <span class="outcome__glyph">
+            <Tombstone status="unverified" outcome={choice.value} compact />
+          </span>
+          <span class="outcome__label">{choice.label}</span>
+          <span class="outcome__hint">{choice.hint}</span>
+        </label>
+      ))
+    }
+  </div>
+
+</fieldset>
+
+<style>
+  .outcome {
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  /* Equal columns, and they stay equal. Not auto-sized: a grid that sized each option to
+     its own content would make one card wider than the others and put a thumb on the
+     scale. */
+  .outcome__options {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+    gap: var(--space-2xs);
+  }
+
+  .outcome__option {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: start;
+    gap: var(--space-3xs) var(--space-2xs);
+    padding: var(--space-sm);
+    border: var(--border);
+    border-radius: var(--radius-sm);
+    background-color: var(--surface);
+    cursor: pointer;
+  }
+
+  .outcome__option:hover {
+    border-color: var(--ink-muted);
+  }
+
+  /* The radio itself is hidden but present: it is what a screen reader announces, what the
+     keyboard drives, and what the form submits. The visible state is on the label. */
+  .outcome__input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  /* Focus follows the hidden input onto the visible card, so a keyboard user sees the ring
+     where they expect it. */
+  .outcome__option:has(.outcome__input:focus-visible) {
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-offset);
+  }
+
+  /* Selection is marked twice: a thicker ink border and a wash. Never by colour alone. */
+  .outcome__option:has(.outcome__input:checked) {
+    border-width: var(--border-width-thick);
+    border-color: var(--ink);
+    background-color: var(--accent-wash);
+    padding: calc(var(--space-sm) - 1px);
+  }
+
+  .outcome__glyph {
+    grid-row: span 2;
+    padding-block-start: 0.15em;
+  }
+
+  .outcome__label {
+    font-weight: var(--weight-semibold);
+  }
+
+  .outcome__hint {
+    grid-column: 2;
+    color: var(--ink-muted);
+    font-size: var(--size-2);
+  }
+
+  .outcome__note {
+    max-width: var(--measure);
+    margin-block-start: var(--space-sm);
+    color: var(--ink-muted);
+    font-size: var(--size-2);
+  }
+</style>

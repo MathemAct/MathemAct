@@ -1,0 +1,10 @@
+---
+/**
+ * /debates/ moved to /opinions/ on 2026-10-12, when the section was renamed
+ * Opinions. A redirect stub, so that old links still reach the listing.
+ */
+import Redirect from '../../components/Redirect.astro';
+import { path } from '../../lib/paths';
+---
+
+<Redirect to={path('/opinions/')} />

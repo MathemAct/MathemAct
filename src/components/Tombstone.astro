@@ -1,0 +1,101 @@
+---
+/**
+ * The QED tombstone — the signature element.
+ *
+ * A filled square marks a report somebody has rechecked and found to hold — still
+ * working if it worked, still not working if it did not. An open square marks one that is
+ * unverified, stale, or reported to have changed since. The optional outcome tints the
+ * square, and where the verification axis says a different thing on each side of it,
+ * `verificationOf` is what knows: "No longer works" would be a lie on a report that never
+ * worked, so the words for `changed` come from both axes and not from the status alone.
+ *
+ * Accessibility, which is the whole reason this is a component and not a CSS class:
+ *
+ *  - The square is drawn in CSS, not typed as ■ or □. Our woff2 subsets are latin and
+ *    latin-ext; U+25A0 is in neither, so a literal glyph would silently fall back to a
+ *    system font and change size between platforms.
+ *  - The square is aria-hidden. The root carries role="img" and an aria-label holding
+ *    the full phrase, so assistive tech hears "Reported outcome: partially worked.
+ *    Last confirmed against an older model" while the screen shows "Partially worked".
+ *  - Colour is never the only signal: fill state and the text label both carry it, and
+ *    the outcome colour goes on the square rather than the label. That is a rule about
+ *    meaning, not about contrast: all three outcome colours clear 4.5:1 on the ground,
+ *    --outcome-partial included at 4.63:1. See the note in tokens.css.
+ */
+import { OUTCOME, tombstoneFilled, tombstoneName, verificationOf } from '../lib/status';
+import type { Outcome, TombstoneStatus } from '../lib/status';
+
+interface Props {
+  /** Verification state. Decides filled versus open. */
+  status: TombstoneStatus;
+  /** Reported outcome. Decides the square's colour. Omit when not applicable. */
+  outcome?: Outcome;
+  /** Hide the visible text, keeping the square and the accessible name. For dense rows
+   *  where the label is already stated in an adjacent column. */
+  compact?: boolean;
+}
+
+const { status, outcome, compact = false } = Astro.props;
+
+const filled = tombstoneFilled(status);
+const visibleLabel = outcome ? OUTCOME[outcome].label : verificationOf(status).label;
+const name = tombstoneName(status, outcome);
+---
+
+<span
+  class:list={['tombstone', { 'tombstone--compact': compact }]}
+  data-filled={filled ? '' : undefined}
+  data-outcome={outcome}
+  role="img"
+  aria-label={name}
+>
+  <span class="tombstone__glyph" aria-hidden="true"></span>
+  <span class:list={[compact ? 'visually-hidden' : 'tombstone__label']}>{visibleLabel}</span>
+</span>
+
+<style>
+  .tombstone {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.45em;
+    /* The square inherits its colour from here, so an outcome only has to set one
+       property. Default is ink; outcomes override below. */
+    color: var(--ink);
+  }
+
+  .tombstone__glyph {
+    /* inline-block rather than a flex item, so `align-items: baseline` positions it
+       against the label's baseline and the rise nudges it onto the x-height. */
+    flex: none;
+    align-self: center;
+    width: var(--tombstone-size);
+    height: var(--tombstone-size);
+    /* currentColor throughout: fill, border, and any future variant stay in step. */
+    border: 1.5px solid currentColor;
+    transform: translateY(var(--tombstone-rise));
+  }
+
+  .tombstone[data-filled] .tombstone__glyph {
+    background-color: currentColor;
+  }
+
+  .tombstone__label {
+    color: var(--ink);
+    font-size: var(--size-2);
+  }
+
+  /* ── Outcome colours ──────────────────────────────────────────────────────────────
+     These three appear nowhere else in the project. They set the square only; the label
+     stays in ink so the words remain the primary signal. */
+  .tombstone[data-outcome='worked'] {
+    color: var(--outcome-worked);
+  }
+
+  .tombstone[data-outcome='partial'] {
+    color: var(--outcome-partial);
+  }
+
+  .tombstone[data-outcome='failed'] {
+    color: var(--outcome-failed);
+  }
+</style>

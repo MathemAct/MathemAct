@@ -1,0 +1,34 @@
+---
+/**
+ * Where the Cloudflare Turnstile widget is drawn, and the sentence that says why.
+ *
+ * The component renders a container and a plain-English note. Mounting is done by the page
+ * script through `mountTurnstile()` in src/lib/turnstile.ts — see that file for why there
+ * is no verification code anywhere in this repository and where the secret key lives.
+ *
+ * Telling people what the widget is, in words, matters more here than on most sites. This
+ * audience checks. A box that appears in a form and contacts another company without
+ * explanation is exactly the kind of thing they will open the network tab over, and the
+ * honest answer — it stops automated signups, it sees your IP address, it is not on pages
+ * you only read — is a good answer.
+ */
+import { path } from '../lib/paths';
+
+interface Props {
+  /** Distinguishes the container when a page has more than one form. */
+  id?: string;
+}
+
+const { id = 'turnstile' } = Astro.props;
+---
+
+<div>
+  <div class="turnstile" id={id} data-turnstile></div>
+
+  <p class="turnstile__note">
+    The box above is a Cloudflare Turnstile check, which keeps automated signups out. It
+    receives your IP address. It is not used on pages you only read. To find out more, see the <a
+      href={path('/privacy/')}>privacy notice</a
+    >.
+  </p>
+</div>

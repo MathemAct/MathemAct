@@ -1,0 +1,31 @@
+---
+// GitHub Pages has no SPA fallback: it serves the site's own 404.html for any unmatched
+// path. Astro emits this route as dist/404.html rather than dist/404/index.html, which is
+// exactly what Pages looks for.
+import Base from '../layouts/Base.astro';
+import { path } from '../lib/paths';
+---
+
+<Base
+  title="Page not found"
+  description="That address does not match anything on MathemAct."
+>
+  <div class="shell page">
+    <div class="prose">
+      <h1>Page not found</h1>
+
+      <p>
+        That address does not match anything on this site. It may have been mistyped, or
+        the page may have been removed.
+      </p>
+
+      <p><a href={path('/')}>Go to the home page</a></p>
+    </div>
+  </div>
+</Base>
+
+<style>
+  .page {
+    padding-block: var(--space-2xl);
+  }
+</style>

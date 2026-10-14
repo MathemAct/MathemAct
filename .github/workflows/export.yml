@@ -1,0 +1,165 @@
+# Export the public corpus to data/, commit it if anything changed, and rebuild the site.
+#
+# This is the read path. CLAUDE.md's read/write split is what makes a free tier viable in
+# production: the site is built from the JSON this job commits, so a reader never opens a
+# connection to Supabase, a traffic spike never touches the 5 GB egress quota, and the site
+# keeps serving while the database is paused or over quota.
+#
+# **It runs when content changes, and every night as well.** Since 20261011120000 the database
+# asks for this workflow, through workflow_dispatch, within a minute of any write to a table the
+# export reads, so a post, an edit, an endorsement or a hide reaches every static page in about
+# two minutes. The token it asks with is in Supabase Vault, not here; see docs/auth.md. The
+# concurrency group below is what keeps a burst of writes from queueing a burst of runs: GitHub
+# holds at most one waiting run per group and replaces it with the newest.
+#
+# **The nightly run stays, and this job's own activity is why.** A Supabase free project pauses
+# after about a week without a connection, and an unattended site can easily go a week without
+# a signup. The nightly connection here resets that clock, so the export is the backup, the
+# citable dataset, and the keep-alive in one job. A night when nothing was posted is exactly the
+# night the keep-alive matters. It is also the fallback if the dispatch token lapses, and
+# scripts/export.mjs warns on the run when it has.
+#
+# Actions are pinned to commit SHAs, not tags: a tag can be moved to point at different code,
+# a SHA cannot.
+name: Export
+
+on:
+  schedule:
+    # 03:17 UTC. Off the hour on purpose — the top of every hour is when every cron on
+    # GitHub's shared runners fires at once and jobs queue for minutes.
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      allow_shrink:
+        description: 'Permit an export that loses more than half the corpus'
+        type: boolean
+        default: false
+
+# The job commits to the repository and then asks for a deploy, so it needs both.
+permissions:
+  contents: write
+  actions: write
+
+# Never two at once. Two exports racing would push conflicting commits into data/, and the
+# loser's rebase would land on files the winner had already rewritten.
+concurrency:
+  group: export
+  cancel-in-progress: false
+
+jobs:
+  export:
+    # Forks have neither the secrets nor a reason to run this. Without the guard, every fork
+    # of this repository would fail a nightly job and mail its owner about it.
+    if: github.repository == 'MathemAct/MathemAct'
+    runs-on: ubuntu-latest
+
+    env:
+      # Comparing a secret against '' evaluates to a plain boolean, so this exposes nothing
+      # while letting the step below decide. The secret itself is injected only into the step
+      # that uses it.
+      HAVE_CREDENTIALS: ${{ secrets.SUPABASE_DB_URL != '' }}
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Fails rather than warns, unlike migrate.yml. A migration workflow with no credentials
+      # has nothing to do and going green is honest; an export with no credentials would
+      # leave yesterday's corpus in place while reporting success, and that failure would
+      # only ever surface as a site that quietly stopped updating.
+      - name: Refuse to run unconfigured
+        if: env.HAVE_CREDENTIALS != 'true'
+        run: |
+          echo "::error title=Export not configured::SUPABASE_DB_URL is not set. Add it under Settings → Secrets and variables → Actions."
+          exit 1
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # SUPABASE_SERVICE_ROLE_KEY is deliberately not passed. The export reads over a direct
+      # database connection, which authorises the same thing by a better door — see the
+      # header of scripts/export.mjs. A job handed a credential it does not use is that
+      # credential in one more place.
+      #
+      # No `continue-on-error` and no `|| true` anywhere in this file. A failed export must
+      # fail the run: the committed corpus is what the site serves, and a job that goes green
+      # having written nothing is indistinguishable from one that had nothing to write.
+      - name: Export
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          ALLOW_SHRINK: ${{ inputs.allow_shrink && '--allow-shrink' || '' }}
+        run: |
+          set -euo pipefail
+          node scripts/export.mjs $ALLOW_SHRINK | tee export.log
+          {
+            echo '### Export'
+            echo
+            echo '```'
+            cat export.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          rm export.log
+
+      # Only the data files decide whether there is anything to commit. manifest.json carries
+      # exportedAt, which changes on every run, so committing on any difference would put a
+      # commit and a full site rebuild into the log every night for ever — including the
+      # nights when nothing was posted, which early on is most of them.
+      #
+      # Staged first, and the comparison is against the index. `git diff` alone reports only
+      # tracked files, so on the very first run — when every file in data/ is new — it would
+      # report no change and the whole export would be dropped on the floor.
+      - name: Is there anything new?
+        id: changed
+        run: |
+          set -euo pipefail
+          git add -A data/
+
+          if git diff --cached --quiet -- data/ ':!data/manifest.json'; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No content changed; leaving the committed export alone."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git --no-pager diff --cached --stat -- data/
+          fi
+
+      - name: Commit and push
+        if: steps.changed.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          counts=$(node -p "Object.entries(require('./data/manifest.json').files).map(([n,f]) => n + ': ' + f.rows + ' rows').join('\n')")
+
+          git commit -m 'Export the corpus' -m "$counts" -m 'Written by .github/workflows/export.yml.'
+
+          # Somebody may have pushed to main between the checkout and now. Rebase rather than
+          # merge: an export commit is a snapshot, and a merge bubble around one records
+          # nothing anybody will ever want.
+          git pull --rebase origin main
+          git push origin HEAD:main
+
+      # A push made with GITHUB_TOKEN does not start another workflow — that is GitHub's
+      # recursion guard, and it means deploy.yml's `on: push` will never see the commit
+      # above. So the deploy is asked for by name. deploy.yml carries workflow_dispatch for
+      # exactly this, and says so.
+      - name: Rebuild the site
+        if: steps.changed.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run deploy.yml --ref main
+
+      - name: Say what happened
+        if: success()
+        run: |
+          if [ "${{ steps.changed.outputs.changed }}" = "true" ]; then
+            echo 'Corpus changed: committed and asked for a rebuild.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Nothing changed. The database was reached, which is what keeps the project from pausing.' >> "$GITHUB_STEP_SUMMARY"
+          fi

@@ -1,0 +1,129 @@
+---
+/**
+ * The frame every corpus listing sits in: the filter rail, the result count, the sort, the
+ * active-filter chips, and the "nothing matches" box.
+ *
+ * One component rather than three copies, for the reason `ReportFields.astro` exists. The
+ * three listings had drifted into three different things — reports had ten filter
+ * dimensions, claims had a sort and nothing else, and network had a category radio group
+ * with an Apply button that submitted a GET to a static host and so did nothing at all. Two
+ * of the three also referenced classes (`.listing__filters`, `.filter-set`, `.filter-chip`)
+ * that were only ever styled inside `search.astro`'s scoped block, so they rendered bare.
+ *
+ * The page supplies the vocabularies and its own results list; everything else is here. The
+ * markup is the contract documented at the top of `src/lib/listing-filters.ts`, and the
+ * engine finds all of it by data attribute.
+ *
+ * The results list is slotted rather than built here, because the three differ and should:
+ * a report is an `<article>` in a plain container, a claim is an `<li>` in `.claim-list`,
+ * an entry is an `<li>` in `.entry-list`. Whatever the page slots must carry `[data-results]`
+ * — that is the element the engine reorders into and the freshness overlay prepends to.
+ *
+ * No scoped styles. Everything here is a class from `src/styles/corpus.css`, which is
+ * global and layered, so the cards a page slots in are styled the same as the frame around
+ * them — and so a cloned template node in a page's freshness overlay is too. A scoped block
+ * in this file would reach none of that; Astro's scope attribute belongs to the file that
+ * authored the element.
+ */
+import type { Sort } from '../lib/listing-filters';
+import type { Group } from '../lib/listings';
+
+interface Props {
+  /** One fieldset each, in this order. Build it with `groupsFor()` so the rail cannot
+   *  drift out of step with the dimensions the engine is given. */
+  groups: readonly Group[];
+  /** The sort menu. A single entry renders no menu — there is nothing to choose. */
+  sorts: readonly Sort[];
+  /** Singular and plural, because "entries" is not "entry" + s. */
+  noun: readonly [singular: string, plural: string];
+  /** How many the page rendered. The engine rewrites this the moment it runs. */
+  total: number;
+}
+
+const { groups, sorts, noun, total } = Astro.props;
+---
+
+<div class="listing">
+  <form class="filters" data-filters aria-label={`Filter ${noun[1]}`}>
+    {/* Hidden by corpus.css until the engine sets data-collapsible on the form, and hidden
+        again above the grid's breakpoint where the rail is simply a sidebar. See the note
+        on the toggle in listing-filters.ts. */}
+    <button
+      class="filters__toggle"
+      type="button"
+      data-filters-toggle
+      aria-expanded="false"
+      aria-controls="filters-body"
+    >
+      <span>Filters</span>
+      <span class="filters__active" data-active-count></span>
+    </button>
+
+    <div class="filters__body" id="filters-body" data-filters-body>
+      {
+        groups.map((group) => (
+          <fieldset class="filters__group" data-group={group.key}>
+            <legend class="filters__legend">{group.legend}</legend>
+
+            <div class="filters__options" data-options>
+              {group.options.map((option) => (
+                <label class="filters__option">
+                  <input type="checkbox" name={group.key} value={option.value} />
+                  <span class="filters__label">{option.label}</span>
+                  {/* Written by the engine: how many would be left if this one were
+                      ticked, given everything else already is. */}
+                  <span class="filters__tally" data-tally={`${group.key}:${option.value}`} />
+                </label>
+              ))}
+            </div>
+
+            {/* Revealed by the engine for a vocabulary longer than it shows by default,
+                and labelled by it too, because the count is only known once the freshness
+                overlay has finished adding to it. */}
+            <button class="filters__more" type="button" data-more hidden />
+          </fieldset>
+        ))
+      }
+    </div>
+  </form>
+
+  <div class="results">
+    {/* Hidden by the engine while there is nothing to count or order, which is the empty
+        corpus. It comes back the moment the freshness overlay finds a row. */}
+    <div class="results__head" data-head hidden={total === 0}>
+      <p class="results__count" data-count aria-live="polite">
+        {total} {total === 1 ? noun[0] : noun[1]}
+      </p>
+
+      {
+        sorts.length > 1 && (
+          <p class="results__sort">
+            <label for="listing-sort">Sort by</label>
+            <select id="listing-sort" data-sort>
+              {sorts.map((sort) => (
+                <option value={sort.value}>{sort.label}</option>
+              ))}
+            </select>
+          </p>
+        )
+      }
+    </div>
+
+    {/* A cited link may name a tag that has since been retired or a tool nothing uses any
+        more. Dropping those silently would show the reader more than the sender saw,
+        without either of them finding out. */}
+    <p class="results__dropped" data-dropped hidden></p>
+
+    <ul class="chips" data-chips role="list"></ul>
+
+    <slot />
+
+    <div class="empty" data-no-results hidden>
+      <p class="empty__heading">Nothing matches all of those filters.</p>
+      <p data-suggestion></p>
+      <p class="actions">
+        <button class="button" type="button" data-clear>Clear all filters</button>
+      </p>
+    </div>
+  </div>
+</div>
