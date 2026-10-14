@@ -16,49 +16,6 @@ of only successes is worthless and reads as advertising. And **the corpus is
 machine-readable and downloadable**, because researchers studying AI adoption in
 mathematics are part of the intended audience.
 
-## Status
-
-Public site, identity layer, account flows, the submission form, reading, and moderation
-built. **Posting publishes**: nothing is reviewed before it appears. Moderation is what
-happens when a reader flags something — a moderator decides whether it stays up, and the
-explanation they write is shown to the author and to the flagger alike. The second kind of
-decision is about a person rather than a post: **an account can be banned** for spam or
-sustained hostility, which stops it writing anything, leaves everything it has already written
-in place, is reversible, and is explained in writing to whoever holds it. Moderators reach the
-screen at `/moderate/` — a nav link appears once the page has confirmed their role via
-localStorage, using the same pattern as the sign-in indicator.
-
-| | |
-|---|---|
-| ✅ | Deploy pipeline, GitHub Pages, 404 |
-| ✅ | Design system, self-hosted IBM Plex, the QED tombstone |
-| ✅ | Home, about, privacy, code of conduct — written, not stubbed |
-| ✅ | Markdown-with-TeX rendering, sanitised at build time |
-| ✅ | Profiles, RLS, institutional badges derived server-side |
-| ✅ | ROR loader, 132,706 institutions, 116,985 domains |
-| ✅ | Sign up, confirm, sign in, reset, profile, erasure request |
-| ✅ | Reports schema: RLS, tags, confirmations, staleness, rate limits |
-| ✅ | The submission form: sixteen sections, draft autosave, one-transaction submit |
-| ✅ | Reading: listing with linkable filters, report pages, author pages |
-| ✅ | Opinions: the agreement scale, the histogram, and a distribution that is withheld until you answer |
-| ✅ | Network: submission, moderation, and a monthly link check |
-| ✅ | Discussion on reports, the citation graph, and the flag queue |
-| ✅ | Contributions on claims: grouped by position or flat, sorted, no replies |
-| ✅ | Endorsement — two actions, counted in words, withdrawable, and never a vote |
-| ✅ | The opinions listing: a shape per card, five orderings, and what they mean stated |
-| ✅ | Proposing a claim: a position required, tags, a source, and a 500-character cap |
-| ✅ | Answering a claim: a position and a reason — an endorsement or a contribution — in one step |
-| ✅ | Moderation: flag-led, audited, explained to both sides, and erasure that erases |
-| ✅ | Account bans: reachable, reversible, and explained to the account holder |
-| ✅ | The export — within minutes of a write, and nightly — the CSV dataset, and the freshness overlay |
-| ✅ | Editing a report: until somebody answers it, and again while it is hidden |
-| ⬜ | Search |
-
-The account pages need `PUBLIC_SUPABASE_ANON_KEY` and `PUBLIC_TURNSTILE_SITE_KEY`, plus
-the dashboard configuration in [docs/auth.md](docs/auth.md). Without them they render a
-plain "accounts are not switched on for this deployment yet", and the rest of the site is
-unaffected.
-
 ## Stack
 
 | Layer | Choice |
