@@ -61,6 +61,9 @@ const year = new Date().getFullYear();
     <meta name="theme-color" content="#f8f5ee" />
     {noindex && <meta name="robots" content="noindex, nofollow" />}
     <link rel="canonical" href={canonical.href} />
+    {/* Through asset(), because the site lives under a base path: a browser's fallback
+        request for /favicon.ico would go to the domain root, outside our site. */}
+    <link rel="icon" type="image/svg+xml" href={asset('/favicon.svg')} />
 
     {/* Preloaded before the font stylesheet is even parsed. These two faces are on every
         page — Sans 400 sets the body, Serif 600 sets every heading — so fetching them

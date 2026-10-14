@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="26.45 60.45 290 290">
+  <!-- The triangle from the home page diagram (src/components/GroupAction.astro), at the
+       same coordinates. Strokes and dots are thickened so they survive at 16px, and it
+       sits on a paper tile so dark ink stays visible on a dark browser tab. Colours are
+       the ground, ink and accent tokens from tokens.css, copied by hand because a favicon
+       cannot read CSS variables. (No double hyphens in this comment: XML forbids them, and
+       a browser rejects the whole file.) -->
+  <rect x="26.45" y="60.45" width="290" height="290" rx="48" fill="#f8f5ee" />
+  <polygon
+    points="221.1,98.4 278.5,312.5 64.4,255.1"
+    fill="none"
+    stroke="#1a1a1a"
+    stroke-width="20"
+    stroke-linejoin="round"
+  />
+  <g fill="#b1231a">
+    <circle cx="221.1" cy="98.4" r="24" />
+    <circle cx="64.4" cy="255.1" r="24" />
+    <circle cx="278.5" cy="312.5" r="24" />
+  </g>
+</svg>
