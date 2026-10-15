@@ -34,14 +34,14 @@
     "inReplyTo": null,
     "body": "Agreed, I've used AI as a reading assistant and found it useful. The suggestions that \"reading papers is a good testing ground for the value of the model\" is interesting: I wonder, do any existing LLM evaluation benchmarks feature this kind of test?",
     "createdAt": "2026-10-11T19:23:26.327Z",
-    "updatedAt": "2026-10-11T19:23:26.327Z",
+    "updatedAt": "2026-10-14T20:07:16.735Z",
     "deletedAt": null,
     "agreementScore": 10,
     "supersededBy": null,
     "supersedesEarlier": false,
-    "endorsedAt": null,
+    "endorsedAt": "2026-10-14T20:07:16.735Z",
     "endorsements": {
-      "capturesMyView": 0,
+      "capturesMyView": 1,
       "agreePositionNotReason": 0
     },
     "author": {
