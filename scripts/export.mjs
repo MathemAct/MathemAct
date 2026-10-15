@@ -80,7 +80,10 @@ Options
                    cause is a broken query rather than a mass deletion.
 
 Environment
-  SUPABASE_DB_URL  Connection string. Direct connection, not PostgREST.
+  SUPABASE_DB_URL  Postgres connection string, not PostgREST. Use the Session pooler string
+                   from the dashboard's Connect panel (host *.pooler.supabase.com, port
+                   5432, user postgres.<project-ref>). The db.<ref>.supabase.co host is
+                   IPv6-only, and GitHub's runners cannot reach it.
 
     $env:SUPABASE_DB_URL = "postgresql://..."      # PowerShell
     export SUPABASE_DB_URL="postgresql://..."      # bash
@@ -996,7 +999,12 @@ async function main() {
       `Could not connect: ${error.message}` +
         (/self.signed|certificate/i.test(error.message)
           ? '\nThat looks like a TLS problem. Append ?sslmode=require to SUPABASE_DB_URL.'
-          : ''),
+          : /ENETUNREACH|EHOSTUNREACH|ECONNREFUSED [0-9a-f]{1,4}:[0-9a-f]{1,4}:/i.test(error.message)
+            ? '\nThe host resolved to an IPv6 address this machine cannot reach. Supabase\'s ' +
+              'direct host (db.<ref>.supabase.co) is IPv6-only and GitHub\'s runners have no ' +
+              'IPv6. Set SUPABASE_DB_URL to the Session pooler string from the dashboard\'s ' +
+              'Connect panel.'
+            : ''),
     );
   }
 

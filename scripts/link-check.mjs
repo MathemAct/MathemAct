@@ -167,7 +167,13 @@ async function main() {
   try {
     await client.connect();
   } catch (error) {
-    fail(`Could not connect: ${error.message}`);
+    fail(
+      `Could not connect: ${error.message}` +
+        (/ENETUNREACH|EHOSTUNREACH|ECONNREFUSED [0-9a-f]{1,4}:[0-9a-f]{1,4}:/i.test(error.message)
+          ? '\nThe host resolved to an IPv6 address this machine cannot reach. Use the Session ' +
+            'pooler string for SUPABASE_DB_URL; see node scripts/export.mjs --help.'
+          : ''),
+    );
   }
 
   // Fetch all published, non-deleted entries.

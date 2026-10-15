@@ -2,6 +2,7 @@
 node_modules/
 dist/
 .astro/
+.claude/
 
 # Environment. The three PUBLIC_* values are public by design and may be committed, but
 # .env is where a real secret would land by accident, so the whole file stays out.

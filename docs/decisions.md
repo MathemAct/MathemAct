@@ -2403,3 +2403,18 @@ row is a `network_entries` row of kind `'entry'`. Only the collection says "opin
 - **The word cannot come back quietly.** The migration ends with an assertion over object names,
   constraints, triggers, policies, functions, types, enum labels, attributes, function bodies and
   object comments, and `028_claims_vocabulary.test.sql` repeats it so a later migration fails CI.
+
+## 2026-10-15 — CI reaches the database through the Session pooler
+
+The first scheduled export, and the `migrate.yml` run before it, failed before sending a query:
+`ENETUNREACH 2a05:d014:…:5432`. `db.<ref>.supabase.co` publishes only an IPv6 address unless the
+project buys the IPv4 add-on, and GitHub's hosted runners have no IPv6 route. So `SUPABASE_DB_URL`
+holds the **Session pooler** string (`*.pooler.supabase.com:5432`, user `postgres.<ref>`), which
+is IPv4. It is still a Postgres connection, so "direct, not PostgREST" above still holds.
+
+- **Session mode, not transaction mode (6543).** The export's single `repeatable read` snapshot
+  and `supabase db push` both assume one session holds one backend for its whole life. Transaction
+  mode hands out a backend per transaction and breaks prepared statements.
+- **The scripts name the cause.** `export.mjs` and `link-check.mjs` add a pointer to the pooler
+  when a connect fails with an unreachable IPv6 address, because a bare `ENETUNREACH` reads like
+  a database outage and is not one.
