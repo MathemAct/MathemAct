@@ -1,5 +1,5 @@
 {
-  "exportedAt": "2026-10-12T19:48:06.898Z",
+  "exportedAt": "2026-10-15T21:38:30.790Z",
   "formatVersion": 2,
   "generator": "scripts/export.mjs",
   "licence": "CC BY 4.0",
@@ -27,7 +27,7 @@
     },
     "comments.json": {
       "rows": 2,
-      "bytes": 1737
+      "bytes": 1759
     },
     "citations.json": {
       "rows": 0,
